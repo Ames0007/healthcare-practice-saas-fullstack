@@ -1,5 +1,7 @@
 <?php
 
+use App\Modules\Identity\Infrastructure\Persistence\User;
+
 return [
 
     /*
@@ -60,12 +62,13 @@ return [
     */
 
     'providers' => [
-        // No default Authenticatable model yet — Identity (TASK-014/015)
-        // introduces a UUID-based User entity per Specification #4 §4.1
-        // and sets AUTH_MODEL/this default then (TASK-005).
+        // AUTH-001: UUID-based UserAccount entity (CLAUDE.md §5/§6),
+        // deliberately outside App\Models — see
+        // App\Modules\Identity\Infrastructure\Persistence\User's own doc
+        // comment. AUTH_MODEL is set in .env/.env.example.
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL'),
+            'model' => env('AUTH_MODEL', User::class),
         ],
 
         // 'users' => [

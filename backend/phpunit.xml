@@ -45,7 +45,17 @@
         <env name="DB_URL" value=""/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
-        <env name="SESSION_DRIVER" value="array"/>
+        <!--
+        AUTH-001: "database", not "array" — Sanctum's stateful-SPA cookie
+        auth is exactly what these tests exercise (login persists a session
+        row, logout/password-reset invalidate it), so the test environment
+        must use the same session driver as development/production
+        (DECISIONS.md ADR-020) to actually prove that behavior rather than
+        assume it.
+        -->
+        <env name="SESSION_DRIVER" value="database"/>
+        <env name="SANCTUM_STATEFUL_DOMAINS" value="localhost:3000,127.0.0.1:3000"/>
+        <env name="FRONTEND_URL" value="http://localhost:3000"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

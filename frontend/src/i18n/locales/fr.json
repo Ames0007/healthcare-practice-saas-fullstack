@@ -28,7 +28,11 @@
     "notificationsFutureNotice": "Disponible dans une prochaine étape.",
     "language": "Langue",
     "user": "Compte",
-    "userFutureNotice": "Disponible dans une prochaine étape.",
+    "userMenu": {
+      "navigationLabel": "Compte",
+      "title": "Mon compte",
+      "logoutAction": "Se déconnecter"
+    },
     "quickCreateMenu": {
       "navigationLabel": "Créer",
       "title": "Créer",
@@ -2093,8 +2097,7 @@
       "renewAction": "Renouveler mon abonnement",
       "supportAction": "Contacter le support",
       "supportNotice": "Disponible dans une prochaine étape.",
-      "logoutAction": "Se déconnecter",
-      "logoutNotice": "Disponible dans une prochaine étape."
+      "logoutAction": "Se déconnecter"
     },
     "plans": {
       "pageTitle": "Plans",
@@ -2564,18 +2567,23 @@
       "hidePassword": "Masquer le mot de passe",
       "rememberMe": "Se souvenir de moi",
       "submitAction": "Se connecter",
+      "submittingAction": "Connexion en cours...",
       "forgotPasswordLink": "Mot de passe oublié ?",
       "requiredError": "Ce champ est requis.",
       "invalidEmailError": "Adresse email invalide.",
-      "pendingBackendNotice": "L'authentification réelle sera disponible après l'intégration du serveur."
+      "invalidCredentialsError": "Email ou mot de passe incorrect.",
+      "rateLimitedError": "Trop de tentatives. Réessayez dans quelques instants.",
+      "serverUnavailableError": "Le serveur est momentanément indisponible. Réessayez."
     },
     "forgotPassword": {
       "heading": "Mot de passe oublié",
       "description": "Saisissez votre adresse email : si un compte existe, des instructions de réinitialisation vous seront envoyées.",
       "emailLabel": "Email",
       "submitAction": "Envoyer le lien",
+      "submittingAction": "Envoi en cours...",
       "requiredError": "Ce champ est requis.",
       "invalidEmailError": "Adresse email invalide.",
+      "serverUnavailableError": "Le serveur est momentanément indisponible. Réessayez.",
       "successHeading": "Vérifiez votre boîte de réception",
       "successMessage": "Si un compte existe pour cette adresse, des instructions de réinitialisation seront envoyées.",
       "backToLogin": "Retour à la connexion"
@@ -2586,11 +2594,23 @@
       "passwordLabel": "Nouveau mot de passe",
       "confirmPasswordLabel": "Confirmer le mot de passe",
       "submitAction": "Réinitialiser",
+      "submittingAction": "Réinitialisation en cours...",
       "requiredError": "Ce champ est requis.",
       "mismatchError": "Les mots de passe ne correspondent pas.",
+      "tooShortError": "Le mot de passe doit contenir au moins 8 caractères.",
+      "invalidTokenError": "Ce lien de réinitialisation est invalide ou a expiré.",
+      "serverUnavailableError": "Le serveur est momentanément indisponible. Réessayez.",
+      "missingTokenHeading": "Lien de réinitialisation invalide",
+      "missingTokenMessage": "Ce lien de réinitialisation est incomplet. Demandez un nouveau lien.",
+      "requestNewLink": "Demander un nouveau lien",
       "successHeading": "Mot de passe mis à jour",
-      "successMessage": "Ceci est une prévisualisation du parcours — aucune modification n'est encore appliquée côté serveur.",
+      "successMessage": "Votre mot de passe a été réinitialisé. Vous pouvez maintenant vous connecter.",
       "backToLogin": "Retour à la connexion"
+    },
+    "session": {
+      "unreachableTitle": "Impossible de contacter le serveur",
+      "unreachableDescription": "Vérifiez votre connexion internet et réessayez.",
+      "retryAction": "Réessayer"
     }
   },
   "onboarding": {

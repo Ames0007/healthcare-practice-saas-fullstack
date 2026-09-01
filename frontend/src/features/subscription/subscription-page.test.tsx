@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { LocaleProvider, useLocale } from "@/i18n/locale-provider";
 import type { Locale } from "@/i18n/config";
+import { SessionProvider } from "@/features/auth/session-context";
 import {
   getBlackoutSubscriptionMockData,
   getCancelledSubscriptionMockData,
@@ -16,6 +17,18 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/app/abonnement",
 }));
 
+// SubscriptionPage reads `useSession()` (AUTH-001) for the Blackout
+// screen's real "Se déconnecter" action — this page's own tests don't
+// exercise session bootstrap itself, so the network boundary is mocked
+// here rather than letting SessionProvider's real `getCurrentUser()` call
+// hit an actual fetch (task §36: "Mock network boundaries appropriately").
+const { logoutMock } = vi.hoisted(() => ({ logoutMock: vi.fn().mockResolvedValue(undefined) }));
+
+vi.mock("@/features/auth/api", () => ({
+  getCurrentUser: vi.fn().mockResolvedValue({ id: "user-1", email: "practicien@example.ma", status: "active", lastLoginAt: null }),
+  logout: logoutMock,
+}));
+
 function DirRoot({ children }: { children: React.ReactNode }) {
   const { direction } = useLocale();
   return <div dir={direction}>{children}</div>;
@@ -25,7 +38,9 @@ function renderPage(initialLocale: Locale, props: React.ComponentProps<typeof Su
   return render(
     <LocaleProvider initialLocale={initialLocale}>
       <DirRoot>
-        <SubscriptionPage {...props} />
+        <SessionProvider>
+          <SubscriptionPage {...props} />
+        </SessionProvider>
       </DirRoot>
     </LocaleProvider>,
   );
@@ -118,7 +133,7 @@ describe("SubscriptionPage", () => {
     expect(screen.queryByText("Utilisation")).not.toBeInTheDocument();
   });
 
-  it("Blackout: support and logout remain accessible (CLAUDE.md §11) and surface a future-feature notice — no real support/auth system simulated", () => {
+  it("Blackout: support surfaces a future-feature notice; logout calls the real session logout (CLAUDE.md §11 — both remain accessible)", () => {
     renderPage("fr", { subscription: getBlackoutSubscriptionMockData() });
 
     const supportButton = screen.getByRole("button", { name: "Contacter le support" });
@@ -130,7 +145,7 @@ describe("SubscriptionPage", () => {
     expect(screen.getByText("Disponible dans une prochaine étape.")).toBeInTheDocument();
 
     fireEvent.click(logoutButton);
-    expect(screen.getByText("Disponible dans une prochaine étape.")).toBeInTheDocument();
+    expect(logoutMock).toHaveBeenCalledTimes(1);
   });
 
   it("Renouveler opens an informational dialog and never mutates subscription state — no fake payment", () => {

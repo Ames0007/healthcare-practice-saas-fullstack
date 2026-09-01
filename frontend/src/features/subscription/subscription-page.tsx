@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useLocale } from "@/i18n/locale-provider";
+import { useSession } from "@/features/auth/session-context";
 import { PageHeader } from "@/components/app/page-header";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -66,6 +67,7 @@ export function SubscriptionPage({
   onRetry,
 }: SubscriptionPageProps) {
   const { t, locale } = useLocale();
+  const { logout } = useSession();
   const [renewDialogOpen, setRenewDialogOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -105,11 +107,10 @@ export function SubscriptionPage({
   if (subscription.status === "blackout") {
     // "Contacter le support"/"Se déconnecter" are real, active controls
     // (CLAUDE.md §11: "only controlled subscription/support/logout
-    // functionality remains accessible" during blackout) — no support
-    // channel or auth/session exists yet in this prototype, so each
-    // surfaces the same established future-feature Toast every other
-    // deliberately-deferred control in the app already uses (UI-FIX),
-    // rather than staying hard-disabled with no explanation.
+    // functionality remains accessible" during blackout). AUTH-001 wires
+    // "Se déconnecter" to the real session logout (no support channel
+    // exists yet, so that one still surfaces the established
+    // future-feature Toast, UI-FIX).
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-4 text-center">
         <h1 className="text-2xl font-semibold text-text">{t("abonnement.blackout.title")}</h1>
@@ -122,7 +123,7 @@ export function SubscriptionPage({
             <Button variant="outline" size="sm" onClick={() => setToastMessage(t("abonnement.blackout.supportNotice"))}>
               {t("abonnement.blackout.supportAction")}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setToastMessage(t("abonnement.blackout.logoutNotice"))}>
+            <Button variant="outline" size="sm" onClick={() => void logout()}>
               {t("abonnement.blackout.logoutAction")}
             </Button>
           </div>

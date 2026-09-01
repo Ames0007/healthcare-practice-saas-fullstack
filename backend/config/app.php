@@ -56,6 +56,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend Application URL
+    |--------------------------------------------------------------------------
+    |
+    | AUTH-001: the Next.js SPA's own origin — distinct from `url` above,
+    | which is this backend's own URL. Used to build links that must point
+    | at a frontend route (e.g. the emailed password-reset link, which
+    | targets the Next.js `/auth/reset-password` page, not a Laravel view).
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'http://localhost:3000'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

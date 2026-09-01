@@ -20,7 +20,11 @@ return [
     // No frontend exists yet (TASK-003); this defaults to the standard
     // local Next.js dev port and is expected to be refined per-environment
     // in TASK-004 (local dev environment) and at production deploy time.
-    'paths' => ['api/*'],
+    //
+    // AUTH-001: `sanctum/csrf-cookie` added — it lives outside the
+    // `api/*` prefix (Sanctum registers it at the application root) but
+    // the frontend must fetch it cross-origin before any stateful POST.
+    'paths' => ['api/*', 'sanctum/csrf-cookie'],
 
     'allowed_methods' => ['*'],
 
@@ -34,6 +38,12 @@ return [
 
     'max_age' => 0,
 
-    'supports_credentials' => false,
+    // AUTH-001: cookies (session + XSRF-TOKEN) must be allowed to cross the
+    // localhost:3000 <-> localhost:8000 boundary for Sanctum's stateful SPA
+    // authentication to work at all — `allowed_origins` above stays a
+    // specific allowlist (never `*`) precisely because credentialed CORS
+    // requires it; browsers reject `Access-Control-Allow-Credentials: true`
+    // paired with a wildcard origin.
+    'supports_credentials' => true,
 
 ];

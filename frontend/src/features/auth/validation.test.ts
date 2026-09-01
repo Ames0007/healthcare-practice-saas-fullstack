@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { validateForgotPasswordForm, validateLoginForm, validateResetPasswordForm } from "./validation";
 
-const MESSAGES = { required: "Champ requis.", invalidEmail: "Email invalide.", mismatch: "Les mots de passe ne correspondent pas." };
+const MESSAGES = {
+  required: "Champ requis.",
+  invalidEmail: "Email invalide.",
+  mismatch: "Les mots de passe ne correspondent pas.",
+  tooShort: "Le mot de passe doit contenir au moins 8 caractères.",
+};
 
 describe("validateLoginForm", () => {
   it("requires email and password", () => {
@@ -49,11 +54,16 @@ describe("validateResetPasswordForm", () => {
   });
 
   it("rejects a mismatched confirmation", () => {
-    const errors = validateResetPasswordForm({ password: "abc123", confirmPassword: "abc124" }, MESSAGES);
+    const errors = validateResetPasswordForm({ password: "abcd1234", confirmPassword: "abcd1235" }, MESSAGES);
     expect(errors.confirmPassword).toBe(MESSAGES.mismatch);
   });
 
-  it("passes when both fields match — no password-policy invention (task §10)", () => {
-    expect(validateResetPasswordForm({ password: "abc123", confirmPassword: "abc123" }, MESSAGES)).toEqual({});
+  it("rejects a password shorter than the backend's own minimum (AUTH-001 §22, Password::min(8))", () => {
+    const errors = validateResetPasswordForm({ password: "short1", confirmPassword: "short1" }, MESSAGES);
+    expect(errors.password).toBe(MESSAGES.tooShort);
+  });
+
+  it("passes when both fields match and meet the minimum length", () => {
+    expect(validateResetPasswordForm({ password: "abcd1234", confirmPassword: "abcd1234" }, MESSAGES)).toEqual({});
   });
 });

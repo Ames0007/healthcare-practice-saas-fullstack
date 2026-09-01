@@ -22,9 +22,9 @@ URL — `/book/{slug}` is referenced directly by `CLAUDE.md` §17):
 
 ```text
 src/app/
-  auth/          /auth        — Login/Forgot/Reset password UX (UI-013X). No real auth.
+  auth/          /auth        — Login/Forgot/Reset password. Real backend auth (AUTH-001).
   onboarding/    /onboarding  — Cabinet Onboarding wizard (UI-013X). No real provisioning.
-  app/           /app         — the tenant practice application (AppShell).
+  app/           /app         — the tenant practice application (AppShell), session-guarded (AUTH-001).
   book/          /book        — mobile-first public booking layout.
   admin/         /admin       — SaaS Platform Admin console (UI-013ABCDE).
   page.tsx       /            — route-architecture index (not a marketing page).
@@ -51,8 +51,17 @@ the composition root stays a single, directly-testable component (see
 Next.js layout/page boundaries that are awkward to unit-test outside a
 real App Router runtime.
 
-No authentication, route guards, or permission checks exist. Do not add
-them here — that is a later task (see `CLAUDE.md` §9-10).
+`/app/*` (`src/app/app/layout.tsx`) is wrapped in `AuthGuard`
+(`components/app/auth-guard.tsx`, AUTH-001) — real session-cookie
+authentication (`SessionProvider`/`useSession`,
+`features/auth/session-context.tsx`), scoped to `/app/*` only via that
+layout (`/auth`/`/book`/`/admin` render no `SessionProvider` and have no
+use for one). This is UX only: the backend independently enforces
+`auth:sanctum` on every protected endpoint regardless of what this
+component renders — never treat client-side routing here as the real
+security boundary. No permission/role/tenant-membership checks exist yet
+— that remains a later task (CLAUDE.md §9-10); `/admin` remains
+deliberately unauthenticated (RISK-018, unchanged by AUTH-001).
 
 ## Component layers
 
@@ -1957,31 +1966,42 @@ src/features/
             themselves (Spec #1 §27, Spec #2 §55.6 "Future/controlled"),
             not merely unspecified (ADR-018 §5).
 
-  auth/     Authentication UX (UI-013X Gate 1) — Login (`/auth`), Forgot
-            password (`/auth/forgot-password`), Reset password
-            (`/auth/reset-password`). Explicitly NOT real authentication
-            (task's own "Authentication UX ≠ real authentication"): no
-            approved spec/wireframe defines a bounded demo-credential
-            mechanism anywhere (grep-confirmed across all 10 specs), so a
-            valid Login submission never sets a session/cookie/
-            LocalStorage entry/JWT — `validateLoginForm` passes, then a
-            Toast reuses the exact "future-feature" convention UI-FIX's
-            dead-button audit already established, rather than faking a
-            successful check (ADR-019 §1). `PasswordInput`
-            (`components/password-input.tsx`) is a from-scratch show/hide
-            field — no such pattern existed anywhere in this codebase
-            before (grep-confirmed) — mirroring `Input`'s own label/error/
-            describedby structure exactly. `ForgotPasswordPage` never
-            sends a real email; its generic success state never discloses
-            whether an account exists, for any well-formed address alike
-            (CLAUDE.md §17's own patient-existence-disclosure rule applied
-            here to accounts). `ResetPasswordPage` renders and validates
-            unconditionally — there is no backend token to verify, so it
-            never claims one was checked. `validateLoginForm`/
-            `validateForgotPasswordForm`/`validateResetPasswordForm`
-            (`validation.ts`) reuse `isValidEmail`
-            (`features/patients/patient-form-validation.ts`) outright and
-            deliberately invent no password-policy rule (task §7/§10).
+  auth/     Authentication — Login (`/auth`), Forgot password
+            (`/auth/forgot-password`), Reset password
+            (`/auth/reset-password`). Real backend integration since
+            AUTH-001 (RISK-019, resolved) — previously UI-013X's
+            explicitly-non-authenticating prototype (ADR-019), now calling
+            `features/auth/api.ts` (built on the shared `src/lib/
+            api-client.ts` fetch boundary — `credentials:"include"`,
+            CSRF-cookie bootstrap, the `{data}`/`{error}` envelope parsed
+            once) against the real Laravel Identity module. `LoginPage`
+            handles real invalid-credentials/rate-limited/server-
+            unavailable states and never calls `useSession()` itself — a
+            successful submission just navigates to `/app`/`?from=`, and
+            that route's own `AuthGuard` (below) discovers the
+            just-established session cookie fresh, the same way any direct
+            navigation would. `PasswordInput`
+            (`components/password-input.tsx`) is unchanged from its
+            original UI-013X implementation — a from-scratch show/hide
+            field mirroring `Input`'s own label/error/describedby
+            structure. `ForgotPasswordPage` now calls the real
+            `forgot-password` endpoint; its generic success message is
+            unchanged (the backend's own response is equally generic —
+            CLAUDE.md §17's patient-existence-disclosure rule applied to
+            accounts, now enforced server-side too, not just in copy).
+            `ResetPasswordPage` now reads `token`/`email` from the URL
+            query string and calls the real `reset-password` endpoint —
+            a missing token/email or a backend `INVALID_RESET_TOKEN`
+            response are new, real states the prototype never had (no
+            backend existed to reject anything). `validateLoginForm`
+            still deliberately invents no password-policy rule for login
+            (task §7 — an existing account's password must keep working
+            even under a later policy change); `validateResetPasswordForm`
+            now mirrors the backend's own `Password::min(8)` policy
+            (AUTH-001 §22 — "frontend should reflect backend
+            requirements, backend remains authoritative", `validation.ts`'s
+            `RESET_PASSWORD_MIN_LENGTH`). Both still reuse `isValidEmail`
+            (`features/patients/patient-form-validation.ts`) outright.
 
   onboarding/
             Cabinet Onboarding wizard (UI-013X Gate 2), replacing the
@@ -2055,6 +2075,15 @@ src/lib/
   nav-config.ts   Single source of truth for sidebar/mobile-nav items —
                   future permission/entitlement/specialty filtering wraps
                   this array; do not fork the sidebar per role (Spec #8 §76).
+  api-client.ts   AUTH-001: the one shared fetch boundary to the real
+                  Laravel backend — `apiFetch`/`ApiError`/
+                  `ApiUnavailableError`. Always `credentials:"include"`
+                  (first-party session-cookie auth, no token anywhere),
+                  bootstraps the Sanctum CSRF cookie before any mutating
+                  request, parses the `{data}`/`{error}` envelope once.
+                  Every future `features/<module>/api.ts` should build on
+                  this rather than calling `fetch` directly — see
+                  `features/auth/api.ts` for the established pattern.
 ```
 
 Only the components a landed task needs exist. The remaining components

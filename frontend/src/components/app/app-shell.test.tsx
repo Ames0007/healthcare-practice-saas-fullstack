@@ -2,10 +2,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { LocaleProvider, useLocale } from "@/i18n/locale-provider";
 import type { Locale } from "@/i18n/config";
+import { SessionProvider } from "@/features/auth/session-context";
 import { AppShell } from "./app-shell";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/app",
+}));
+
+// AppShell reads `useSession()` (AUTH-001) for the real user-menu/logout
+// dialog — mocked here so these structural/UI-FIX tests never hit a real
+// fetch (task §36: "Mock network boundaries appropriately").
+const { logoutMock } = vi.hoisted(() => ({ logoutMock: vi.fn().mockResolvedValue(undefined) }));
+
+vi.mock("@/features/auth/api", () => ({
+  getCurrentUser: vi.fn().mockResolvedValue({ id: "user-1", email: "practicien@example.ma", status: "active", lastLoginAt: null }),
+  logout: logoutMock,
 }));
 
 function DirRoot({ children }: { children: React.ReactNode }) {
@@ -17,9 +28,11 @@ function renderShell(locale: Locale = "fr") {
   return render(
     <LocaleProvider initialLocale={locale}>
       <DirRoot>
-        <AppShell>
-          <p>Demo content</p>
-        </AppShell>
+        <SessionProvider>
+          <AppShell>
+            <p>Demo content</p>
+          </AppShell>
+        </SessionProvider>
       </DirRoot>
     </LocaleProvider>,
   );
@@ -137,10 +150,10 @@ describe("AppShell", () => {
   });
 
   /**
-   * UI-FIX: the notification bell, user-account button and mobile "Plus"
-   * were visibly interactive controls with no handler at all. Each now
-   * surfaces the same established future-feature `Toast` notice already
-   * used across the app, rather than staying silently inert.
+   * UI-FIX: the notification bell and mobile "Plus" were visibly
+   * interactive controls with no handler at all. Each surfaces the same
+   * established future-feature `Toast` notice already used across the
+   * app, rather than staying silently inert.
    */
   describe("future-feature notices", () => {
     it("notifications button shows the future-feature notice", () => {
@@ -150,19 +163,39 @@ describe("AppShell", () => {
       expect(screen.getByText("Disponible dans une prochaine étape.")).toBeInTheDocument();
     });
 
-    it("user-account button shows the future-feature notice", () => {
-      renderShell();
-
-      fireEvent.click(screen.getByRole("button", { name: "Compte" }));
-      expect(screen.getByText("Disponible dans une prochaine étape.")).toBeInTheDocument();
-    });
-
     it("mobile Plus button shows the future-feature notice", () => {
       renderShell();
 
       const mobileNav = screen.getByRole("navigation", { name: "Plus" });
       fireEvent.click(within(mobileNav).getByRole("button", { name: "Plus" }));
       expect(screen.getByText("Disponible dans une prochaine étape.")).toBeInTheDocument();
+    });
+  });
+
+  /**
+   * AUTH-001: the user-account button used to be an inert future-feature
+   * notice (UI-FIX) — it now opens a real user menu with the
+   * authenticated account's email and a working logout action.
+   */
+  describe("user menu (AUTH-001)", () => {
+    it("opens the user menu showing the authenticated account's email", async () => {
+      renderShell();
+
+      fireEvent.click(screen.getByRole("button", { name: "Compte" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Compte" });
+      expect(within(dialog).getByText("practicien@example.ma")).toBeInTheDocument();
+    });
+
+    it("Se déconnecter calls the real session logout", async () => {
+      renderShell();
+
+      fireEvent.click(screen.getByRole("button", { name: "Compte" }));
+      const dialog = await screen.findByRole("dialog", { name: "Compte" });
+
+      fireEvent.click(within(dialog).getByRole("button", { name: "Se déconnecter" }));
+
+      expect(logoutMock).toHaveBeenCalledTimes(1);
     });
   });
 });

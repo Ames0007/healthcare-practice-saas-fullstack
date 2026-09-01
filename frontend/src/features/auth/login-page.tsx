@@ -2,48 +2,70 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useLocale } from "@/i18n/locale-provider";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Toast } from "@/components/ui/toast";
 import { LanguageSwitcher } from "@/components/app/language-switcher";
+import { ApiError, ApiUnavailableError } from "@/lib/api-client";
 import { PasswordInput } from "./components/password-input";
 import { validateLoginForm } from "./validation";
+import { login } from "./api";
 import type { LoginFormValues } from "./types";
 
 const INITIAL_VALUES: LoginFormValues = { email: "", password: "", rememberMe: false };
 
 /**
- * Login (UI-013X Gate 1 §6, Spec #9 Screen 01). Real authentication does
- * not exist yet — no approved spec/wireframe defines a bounded "demo
- * credentials" mechanism (grep-confirmed across all 10 specs), and the
- * established repo precedent for "no real auth" prototype screens
- * (UI-013ABCDE's `/admin/*`, ADR-018) is "render without a gate," not "fake
- * a successful login." Per the task's own explicit fallback (§8), a valid
- * submission never sets a session/cookie/LocalStorage/JWT — it surfaces a
- * bounded Toast notice instead, reusing the exact "future-feature Toast"
- * convention already established for other not-yet-backed actions
- * (UI-FIX's dead-button audit). The form itself still fully validates —
- * it never "does nothing."
+ * Login (AUTH-001, replacing UI-013X's prototype). A successful submission
+ * now calls the real backend and navigates to `/app` — it deliberately does
+ * NOT bootstrap `useSession()` itself: `/app`'s own `AuthGuard` (rendered
+ * fresh on arrival) discovers the session the browser just received via
+ * cookie, the same way any direct navigation to `/app` would. This keeps
+ * `SessionProvider` scoped to `/app/*` (task's own boundary — `/auth` has
+ * no other use for it) instead of wrapping the whole application just for
+ * this one redirect.
  */
 export function LoginPage() {
   const { t } = useLocale();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [values, setValues] = useState<LoginFormValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     const nextErrors = validateLoginForm(values, {
       required: t("auth.login.requiredError"),
       invalidEmail: t("auth.login.invalidEmailError"),
     });
     setErrors(nextErrors);
+    setFormError(null);
+
     if (Object.keys(nextErrors).length > 0) {
       return;
     }
-    setToastMessage(t("auth.login.pendingBackendNotice"));
+
+    setIsSubmitting(true);
+    try {
+      await login(values.email, values.password, values.rememberMe);
+
+      const from = searchParams.get("from");
+      router.push(from && from.startsWith("/app") ? from : "/app");
+    } catch (error) {
+      if (error instanceof ApiError && error.code === "INVALID_CREDENTIALS") {
+        setFormError(t("auth.login.invalidCredentialsError"));
+      } else if (error instanceof ApiError && error.code === "TOO_MANY_ATTEMPTS") {
+        setFormError(t("auth.login.rateLimitedError"));
+      } else if (error instanceof ApiUnavailableError) {
+        setFormError(t("auth.login.serverUnavailableError"));
+      } else {
+        setFormError(t("auth.login.serverUnavailableError"));
+      }
+      setIsSubmitting(false);
+    }
   }
 
   return (
@@ -54,6 +76,12 @@ export function LoginPage() {
       </div>
 
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        {formError && (
+          <p role="alert" className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
+            {formError}
+          </p>
+        )}
+
         <Input
           label={t("auth.login.emailLabel")}
           type="email"
@@ -85,8 +113,8 @@ export function LoginPage() {
           {t("auth.login.rememberMe")}
         </label>
 
-        <Button type="submit" className="w-full">
-          {t("auth.login.submitAction")}
+        <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? t("auth.login.submittingAction") : t("auth.login.submitAction")}
         </Button>
       </form>
 
@@ -96,8 +124,6 @@ export function LoginPage() {
         </Link>
         <LanguageSwitcher />
       </div>
-
-      <Toast message={toastMessage} onDismiss={() => setToastMessage(null)} />
     </Card>
   );
 }

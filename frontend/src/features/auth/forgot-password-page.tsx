@@ -7,35 +7,52 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { validateForgotPasswordForm } from "./validation";
+import { forgotPassword } from "./api";
 import type { ForgotPasswordFormValues } from "./types";
 
 const INITIAL_VALUES: ForgotPasswordFormValues = { email: "" };
 
 /**
- * Forgot password (UI-013X Gate 1 §9, Spec #2 §5.2). No email is actually
- * sent — the success state is deliberately generic regardless of whether
- * the address matches anything, so this screen never discloses account
- * existence (task's own explicit instruction, mirrors CLAUDE.md §17's
- * "Do not expose whether the submitted patient already exists" applied
- * here to accounts instead of patients).
+ * Forgot password (AUTH-001, replacing UI-013X's prototype). The success
+ * state is shown for any well-formed email — the backend's own response is
+ * already generic regardless of whether the account exists (CLAUDE.md §17),
+ * so this page never has enough information to distinguish the two cases
+ * even if it wanted to.
  */
 export function ForgotPasswordPage() {
   const { t } = useLocale();
   const [values, setValues] = useState<ForgotPasswordFormValues>(INITIAL_VALUES);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     const nextErrors = validateForgotPasswordForm(values, {
       required: t("auth.forgotPassword.requiredError"),
       invalidEmail: t("auth.forgotPassword.invalidEmailError"),
     });
     setErrors(nextErrors);
+    setFormError(null);
+
     if (Object.keys(nextErrors).length > 0) {
       return;
     }
-    setSubmitted(true);
+
+    setIsSubmitting(true);
+    try {
+      await forgotPassword(values.email);
+      setSubmitted(true);
+    } catch {
+      // A malformed-email 422 is already caught by client-side validation
+      // above — any error reaching here is a genuine network/server
+      // problem, never an account-existence signal (the backend's own
+      // response never distinguishes that either).
+      setFormError(t("auth.forgotPassword.serverUnavailableError"));
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   if (submitted) {
@@ -60,6 +77,12 @@ export function ForgotPasswordPage() {
       </div>
 
       <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+        {formError && (
+          <p role="alert" className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
+            {formError}
+          </p>
+        )}
+
         <Input
           label={t("auth.forgotPassword.emailLabel")}
           type="email"
@@ -70,8 +93,8 @@ export function ForgotPasswordPage() {
           error={errors.email}
         />
 
-        <Button type="submit" className="w-full">
-          {t("auth.forgotPassword.submitAction")}
+        <Button type="submit" className="w-full" disabled={isSubmitting}>
+          {isSubmitting ? t("auth.forgotPassword.submittingAction") : t("auth.forgotPassword.submitAction")}
         </Button>
       </form>
 

@@ -2988,3 +2988,30 @@ All notable changes to this project are documented in this file.
   regression clean (179 files, 0 failures), typecheck/lint/build clean.
   Backend regression (10 tests, 26 assertions, clean) unaffected — no
   backend files touched.
+- AUTH-001 — Real authentication, sessions & password recovery: the first
+  full-stack integration task, replacing UI-013X's `/auth/*` prototype
+  (RISK-019, now resolved) with a real Laravel `app/Modules/Identity/`
+  backend and a real frontend API boundary. See
+  `docs/implementation/IMPLEMENTATION_STATUS.md`'s new "Full-Stack
+  Integration Sequence" section and `DECISIONS.md` ADR-020 for full
+  detail. Summary: Laravel Sanctum stateful-SPA session-cookie
+  authentication (not JWT), `SESSION_DRIVER=database`; real
+  login/logout/me/forgot-password/reset-password endpoints backed by
+  `bcrypt`-hashed passwords, Laravel's own `PasswordBroker` for reset
+  tokens, and two-layer login rate limiting; every credential/reset
+  failure mode is provably indistinguishable (no account-existence or
+  password-vs-unknown-email oracle). A same-request container-singleton
+  staleness bug affecting logout's own session bookkeeping was found and
+  fixed at the source, not merely worked around in tests. Frontend gained
+  its first real network boundary (`src/lib/api-client.ts`,
+  `features/auth/api.ts`, `features/auth/session-context.tsx`,
+  `components/app/auth-guard.tsx`) — `/app/*` now bootstraps and
+  redirects on a real session check, and the topbar/Blackout logout
+  controls call the real endpoint, replacing their previous
+  future-feature Toast placeholders. Tenant context, permission
+  enforcement and onboarding provisioning remain explicitly out of
+  scope. 42/42 backend tests (32 new, real PostgreSQL), 1995/1995
+  frontend tests (26 new across 2 new files), typecheck/lint/build
+  clean, plus a real Playwright-driven browser verification against the
+  live dev backend+frontend+PostgreSQL covering the full login/logout/
+  guard-redirect/forgot-password/emailed-link/reset/re-login loop.

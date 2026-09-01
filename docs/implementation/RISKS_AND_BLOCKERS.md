@@ -280,7 +280,7 @@ anywhere beyond a controlled prototype-review environment.
 
 **Topic:** `/auth` has no real credential verification — Login/Forgot
 password/Reset password never authenticate anyone
-**Status:** OPEN (documented boundary, not a defect — task/UI-013X, ADR-019)
+**Status:** RESOLVED (AUTH-001, 2026-09-01, DECISIONS.md ADR-020)
 **Affected Tasks:** UI-013X, `06-master-implementation-plan.md` TASK-014
 ("Authentication") / TASK-016 ("Login security")
 **Description:** `LoginPage` validates form shape only (required fields,
@@ -295,10 +295,24 @@ it renders and validates the form regardless of any `token` query string
 a genuine emailed link would carry, since there is no backend to check it
 against. None of this is a defect: it is the explicit "Authentication UX
 ≠ real authentication" boundary the task itself mandates.
-**Decision Required Before:** TASK-014/TASK-016 (or equivalent) must
-implement real credential verification, session establishment, a genuine
-password-reset token/email flow, and server-side enforcement before any
-of `/auth`'s screens can be treated as an actual security boundary.
+**Resolution:** AUTH-001 replaced all three screens' prototype seams with
+real backend calls (`App\Modules\Identity`, Laravel Sanctum stateful-SPA
+session cookies) — real credential verification, real
+`sessions`-table-backed session establishment, a real
+`PasswordBroker`-issued single-use reset token emailed via the `log`
+mailer locally, and server-side enforcement (`auth:sanctum` on `/me` and
+`/logout`) independent of any frontend state. Verified via 42 backend
+feature tests (login/logout/me/forgot/reset, including cross-cutting
+enumeration-protection and rate-limiting cases) and a real
+Playwright-driven browser run against the live Postgres-backed backend
+(login failure/success, logout, `/app` route-guard redirect, the full
+forgot->emailed-link->reset->login-with-new-password loop). Tenant
+context, permission enforcement and platform-admin authorization remain
+entirely out of scope — see the still-open items this created no change
+to below (RISK-018) and CLAUDE.md's own Identity/Tenancy phase boundary.
+**Decision Required Before:** N/A — resolved. TENANT-001/AUTHZ-001 (or
+equivalent) still own tenant context, membership, and permission
+enforcement on top of this real authentication foundation.
 
 ---
 

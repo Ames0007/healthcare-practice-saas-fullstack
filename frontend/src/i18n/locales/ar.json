@@ -28,7 +28,11 @@
     "notificationsFutureNotice": "ستتوفر هذه الميزة في مرحلة لاحقة.",
     "language": "اللغة",
     "user": "الحساب",
-    "userFutureNotice": "ستتوفر هذه الميزة في مرحلة لاحقة.",
+    "userMenu": {
+      "navigationLabel": "الحساب",
+      "title": "حسابي",
+      "logoutAction": "تسجيل الخروج"
+    },
     "quickCreateMenu": {
       "navigationLabel": "إنشاء",
       "title": "إنشاء",
@@ -2093,8 +2097,7 @@
       "renewAction": "تجديد اشتراكي",
       "supportAction": "الاتصال بالدعم",
       "supportNotice": "ستتوفر هذه الميزة في مرحلة لاحقة.",
-      "logoutAction": "تسجيل الخروج",
-      "logoutNotice": "ستتوفر هذه الميزة في مرحلة لاحقة."
+      "logoutAction": "تسجيل الخروج"
     },
     "plans": {
       "pageTitle": "الخطط",
@@ -2564,18 +2567,23 @@
       "hidePassword": "إخفاء كلمة المرور",
       "rememberMe": "تذكرني",
       "submitAction": "تسجيل الدخول",
+      "submittingAction": "جارٍ تسجيل الدخول...",
       "forgotPasswordLink": "نسيت كلمة المرور؟",
       "requiredError": "هذا الحقل مطلوب.",
       "invalidEmailError": "عنوان بريد إلكتروني غير صالح.",
-      "pendingBackendNotice": "ستتوفر المصادقة الفعلية بعد تكامل الخادم."
+      "invalidCredentialsError": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
+      "rateLimitedError": "محاولات كثيرة جدًا. حاولوا مرة أخرى بعد قليل.",
+      "serverUnavailableError": "الخادم غير متاح حاليًا. حاولوا مرة أخرى."
     },
     "forgotPassword": {
       "heading": "نسيت كلمة المرور",
       "description": "أدخلوا عنوان بريدكم الإلكتروني: إذا كان الحساب موجودًا، ستُرسل إليكم تعليمات إعادة التعيين.",
       "emailLabel": "البريد الإلكتروني",
       "submitAction": "إرسال الرابط",
+      "submittingAction": "جارٍ الإرسال...",
       "requiredError": "هذا الحقل مطلوب.",
       "invalidEmailError": "عنوان بريد إلكتروني غير صالح.",
+      "serverUnavailableError": "الخادم غير متاح حاليًا. حاولوا مرة أخرى.",
       "successHeading": "تحققوا من بريدكم الإلكتروني",
       "successMessage": "إذا كان هناك حساب لهذا العنوان، ستُرسل تعليمات إعادة التعيين.",
       "backToLogin": "العودة إلى تسجيل الدخول"
@@ -2586,11 +2594,23 @@
       "passwordLabel": "كلمة المرور الجديدة",
       "confirmPasswordLabel": "تأكيد كلمة المرور",
       "submitAction": "إعادة التعيين",
+      "submittingAction": "جارٍ إعادة التعيين...",
       "requiredError": "هذا الحقل مطلوب.",
       "mismatchError": "كلمتا المرور غير متطابقتين.",
+      "tooShortError": "يجب أن تتكون كلمة المرور من 8 أحرف على الأقل.",
+      "invalidTokenError": "رابط إعادة التعيين هذا غير صالح أو منتهي الصلاحية.",
+      "serverUnavailableError": "الخادم غير متاح حاليًا. حاولوا مرة أخرى.",
+      "missingTokenHeading": "رابط إعادة تعيين غير صالح",
+      "missingTokenMessage": "رابط إعادة التعيين هذا غير مكتمل. اطلبوا رابطًا جديدًا.",
+      "requestNewLink": "طلب رابط جديد",
       "successHeading": "تم تحديث كلمة المرور",
-      "successMessage": "هذه معاينة للمسار فقط — لم يتم تطبيق أي تغيير فعلي على الخادم بعد.",
+      "successMessage": "تمت إعادة تعيين كلمة مروركم. يمكنكم الآن تسجيل الدخول.",
       "backToLogin": "العودة إلى تسجيل الدخول"
+    },
+    "session": {
+      "unreachableTitle": "تعذّر الاتصال بالخادم",
+      "unreachableDescription": "تحققوا من اتصالكم بالإنترنت وحاولوا مرة أخرى.",
+      "retryAction": "إعادة المحاولة"
     }
   },
   "onboarding": {

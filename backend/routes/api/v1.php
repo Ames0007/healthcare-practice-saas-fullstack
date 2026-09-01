@@ -9,9 +9,11 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 |
 | Loaded under the /api/v1 prefix by routes/api.php. Module route files
-| will be required from here as they are implemented (e.g. Identity,
-| Patients, Scheduling); no business module routes exist yet.
+| are required from here as they are implemented — Identity (AUTH-001) is
+| the first.
 |
 */
 
 Route::get('/health', HealthController::class);
+
+require base_path('app/Modules/Identity/Presentation/routes.php');

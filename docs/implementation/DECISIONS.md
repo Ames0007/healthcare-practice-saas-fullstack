@@ -1946,3 +1946,186 @@ set, selecting a 20-minute service left the `<select>` showing 15).
 ### Date
 
 2026-08-31
+
+------------------------------------------------------------------------
+
+## ADR-020 — AUTH-001 Real Authentication: Sanctum SPA session cookies, database session driver, and a bounded per-module error/request-id contract
+
+### Status
+
+Accepted
+
+### Context
+
+AUTH-001 is the first task allowed to replace a frontend prototype seam
+(UI-013X's `/auth/*`, explicitly non-authenticating per ADR-019/RISK-019)
+with a real Laravel backend. It required resolving several genuine
+architectural questions Phase 0 deliberately left open:
+
+1. Session/cookie authentication topology between the Next.js SPA
+   (`localhost:3000`) and Laravel API (`localhost:8000`) — two different
+   origins, same site.
+2. `SESSION_DRIVER` — TASK-005 explicitly deferred this "to a
+   session-storage decision in Identity" (`backend/.env.example`).
+3. Whether AUTH-001's own error responses may use the `{error:{code,
+   message, details, request_id}}` envelope CLAUDE.md §54 mandates for
+   *every* task, given the dedicated error-contract task (TASK-011) and
+   request-id task (TASK-012) are both still `NOT_STARTED`.
+4. A same-request state-leakage bug discovered while writing the
+   session/logout feature tests, real enough to affect production
+   correctness, not just the test harness.
+
+### Decision
+
+1. **Laravel Sanctum, stateful-SPA cookie mode** — not token auth, not
+   JWT. `composer require laravel/sanctum`; `bootstrap/app.php` calls
+   `$middleware->statefulApi()`; `config/sanctum.php`'s default
+   `stateful` list already covers `localhost:3000`/`127.0.0.1:8000`.
+   Sanctum's `personal_access_tokens` table/migration is deliberately
+   **not** published or run — nothing in this architecture ever issues an
+   API token; `Laravel\Sanctum\Guard` never queries that table unless a
+   bearer token is actually present on the request (verified by reading
+   `vendor/laravel/sanctum/src/Guard.php`), so omitting it is safe, not
+   an oversight.
+2. **`SESSION_DRIVER=database`**, not Redis/`file`/`array`. A dedicated
+   `sessions` migration exists (Laravel's own default table, `user_id`
+   adapted from bigint to `uuid` per this project's convention). Chosen
+   over Redis specifically so Identity does not silently pull in
+   TASK-006's still-`NOT_STARTED` Redis/queue foundation; chosen over
+   `file` because a database-backed session is what makes "log out this
+   user's other sessions" (§21) and "one session row per login" testable
+   and inspectable at all.
+3. **CORS**: `config/cors.php` `supports_credentials` flipped `false` ->
+   `true`, `paths` extended to include `sanctum/csrf-cookie` (outside the
+   `api/*` prefix). `allowed_origins` stays a specific allowlist — never
+   `*` — since browsers reject credentialed requests paired with a
+   wildcard origin.
+4. **A bounded `{error:{...}}` envelope and `X-Request-Id` header**,
+   scoped to AUTH-001's own five endpoints only (`App\Support\Http\
+   ApiErrorResponse`, `App\Http\Middleware\AssignRequestId`) — not the
+   full repository-wide exception-code catalog TASK-011 owns, and not
+   the full cross-cutting request-id propagation (queue jobs, provider
+   calls, every route) TASK-012 owns. CLAUDE.md §54 applies to "every
+   task," and AUTH-001's own §54 explicitly shows this exact envelope
+   shape, so implementing a working, real instance of it now — for the
+   five endpoints this task actually owns — was judged correct over
+   either skipping it (contradicts CLAUDE.md) or building the complete
+   future system prematurely (contradicts CLAUDE.md §3's "do not invent
+   a large new subsystem"/§51 "avoid premature abstraction"). Future
+   modules extend `ApiErrorResponse`/`AssignRequestId` rather than
+   inventing a second envelope; TASK-011/012 may still supersede both
+   with the complete version.
+5. **Login uses `SessionGuard::attemptWhen()`**, not `attempt()` +
+   after-the-fact status check — an inactive account's session/
+   remember-token is therefore never created-then-torn-down, it is never
+   created at all. Rate limiting is two-layered: a coarse per-IP
+   `throttle:login` route limiter (20/min, defends against a botnet
+   sweeping many accounts from one IP) plus a finer per-account+IP
+   `RateLimiter` check inside `AuthenticateUser` (5 attempts/60s, defends
+   one account against many IPs) — deliberately not merged into one
+   limiter, since they defend against different attack shapes.
+6. **Password reset uses Laravel's own `PasswordBroker`**
+   (`Password::sendResetLink`/`Password::reset`), not a bespoke token
+   scheme — it already provides a random, hashed-at-rest, single-use,
+   time-limited token satisfying AUTH-001 §19 with no new code.
+   `ResetPassword::createUrlUsing()` is overridden
+   (`AppServiceProvider::configurePasswordResetUrl`) to point at the
+   Next.js `/auth/reset-password` route (`config('app.frontend_url')`,
+   new config key) instead of a nonexistent Laravel view. Every failure
+   mode (unknown email, wrong/expired/used token) collapses to one
+   `INVALID_RESET_TOKEN` response — the same enumeration-protection
+   reasoning CLAUDE.md §17 applies to patients, applied here to accounts.
+   `RequestPasswordReset` never branches its HTTP response on the
+   broker's returned status (`RESET_LINK_SENT`/`INVALID_USER`/
+   `RESET_THROTTLED`) for the same reason: a distinguishable throttle
+   response on a second rapid request would let an attacker infer
+   account existence from timing alone.
+7. **A same-request container-singleton staleness bug, found and fixed
+   during logout/reset test-writing, not merely worked around in
+   tests.** `Illuminate\Auth\Middleware\Authenticate` (`auth:sanctum`)
+   calls `Auth::shouldUse('sanctum')` for the current request, which
+   redirects two framework container **singletons** — `'auth.driver'`
+   (`Illuminate\Auth\AuthServiceProvider`, aliased to the `Guard`
+   contract) and, separately, `'session.store'`
+   (`Illuminate\Session\SessionServiceProvider`) — to resolve a
+   different/stale guard or session object than the one the current
+   request's own middleware chain is actually using. Concretely: without
+   a fix, `LogoutController`'s response would still get its rotated
+   session row saved with a `user_id` pointing at the just-logged-out
+   user (`DatabaseSessionHandler::addUserInformation()` reads
+   `Guard::class`, i.e. the stale singleton) — a real, reproducible
+   bookkeeping bug on every logout, not merely a test artifact, though
+   the *authentication* result itself (a fresh, correctly anonymous
+   session) was already right even before the fix. `LogoutUser::handle()`
+   now explicitly calls `Auth::forgetGuards()` and
+   `app()->forgetInstance('auth.driver')` after logging out, before the
+   response is built. Separately, `AppServiceProvider::boot()` registers
+   an `$app->terminating()` callback forgetting `AuthManager`'s guards,
+   `SessionManager`'s drivers, `'auth.driver'` and `'session.store'` —
+   this second part is a no-op in production (a real HTTP request already
+   gets a brand-new process per request) but is what makes Laravel's own
+   test HTTP client behave like independent real requests instead of
+   leaking guard/session state across sequential `postJson()`/`getJson()`
+   calls within one test method, which — undiscovered — would have let
+   the automated test suite pass by accident on a real bug.
+8. **Frontend**: `frontend/src/lib/api-client.ts` (`apiFetch`, `ApiError`,
+   `ApiUnavailableError`) is the one shared fetch boundary every
+   `features/<module>/api.ts` should build on (task's own explicit
+   ask, §23) — always `credentials:"include"`, CSRF-cookie bootstrap
+   before any mutating request, the `{data}`/`{error}` envelope parsed
+   once. `SessionProvider`/`useSession()`
+   (`features/auth/session-context.tsx`) is deliberately scoped to
+   `/app/*` only (rendered by `AuthGuard` in `src/app/app/layout.tsx`),
+   not the root layout — `/auth`/`/book` have no use for a session
+   bootstrap, and `LoginPage` itself never calls `useSession()`: a
+   successful login just navigates to `/app`/`?from=`, and that route's
+   own fresh `AuthGuard` discovers the just-established cookie session
+   the same way any direct navigation would.
+
+### Alternatives considered
+
+1. JWT / bearer-token authentication — rejected: CLAUDE.md §9/AUTH-001
+   §9 both explicitly warn against inventing JWT merely because frontend
+   and backend are separate processes; Sanctum's stateful-SPA mode is the
+   framework's own documented solution for exactly this topology.
+2. Redis-backed sessions now, pulling TASK-006 forward — rejected: no
+   concrete requirement forces it yet, and doing so would silently
+   expand AUTH-001's scope into a foundation task explicitly marked
+   `NOT_STARTED` and out of this task's stated boundaries.
+3. Skip the `{error:{...}}` envelope entirely until TASK-011 — rejected:
+   CLAUDE.md §54 is not phase-gated language ("every task"), and
+   AUTH-001's own instructions show the exact shape expected; shipping
+   Laravel's raw default JSON error shape instead would need a second,
+   breaking migration once TASK-011 lands.
+4. Paper over the guard/session-singleton staleness only inside the test
+   suite (e.g. a per-test manual `Auth::forgetGuards()` call) — rejected
+   once the production-reachable half of the bug (logout's own session
+   row keeping a stale `user_id`) was confirmed: fixing it only in tests
+   would have left a real, shippable correctness bug in `LogoutUser`
+   itself.
+
+### Consequences
+
+- Every future authenticated module's own `auth:sanctum` routes inherit
+  this session/CSRF/CORS foundation with no further per-module setup.
+- `SESSION_DRIVER=database` is now the real, load-bearing local/CI/
+  production default — TASK-006 (Redis/queue) does not need to revisit
+  session storage; it remains free to choose Redis for cache/queue only.
+- TASK-011/012 (error contract, request IDs) inherit a working reference
+  implementation (`ApiErrorResponse`, `AssignRequestId`) to generalize
+  rather than a green field — they should extend, not replace outright,
+  unless a genuine incompatibility is found.
+- Any future module resolving `Illuminate\Contracts\Auth\Guard` (or
+  otherwise depending on "the current default guard") after a request
+  has passed through an `auth:<other-guard>` middleware should be aware
+  of this same singleton-staleness class of bug — `AppServiceProvider`'s
+  `terminating()` callback is the one place both are reset.
+- `docs/implementation/RISKS_AND_BLOCKERS.md` RISK-019 is resolved by
+  this task; frontend route protection remains explicitly UX-only
+  (RISK-018 for `/admin`, and AUTH-001's own boundary for `/app`) —
+  backend authorization is what actually matters, and permission/tenant
+  enforcement remains entirely out of this task's scope.
+
+### Date
+
+2026-09-01
