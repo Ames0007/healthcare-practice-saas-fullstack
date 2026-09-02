@@ -23,8 +23,8 @@ URL — `/book/{slug}` is referenced directly by `CLAUDE.md` §17):
 ```text
 src/app/
   auth/          /auth        — Login/Forgot/Reset password. Real backend auth (AUTH-001).
-  onboarding/    /onboarding  — Cabinet Onboarding wizard (UI-013X). No real provisioning.
-  app/           /app         — the tenant practice application (AppShell), session-guarded (AUTH-001).
+  onboarding/    /onboarding  — Cabinet Onboarding wizard (UI-013X). Real tenant provisioning (TENANT-001), guarded by OnboardingGuard.
+  app/           /app         — the tenant practice application (AppShell), session- and tenant-guarded (AUTH-001, TENANT-001).
   book/          /book        — mobile-first public booking layout.
   admin/         /admin       — SaaS Platform Admin console (UI-013ABCDE).
   page.tsx       /            — route-architecture index (not a marketing page).
@@ -52,16 +52,21 @@ Next.js layout/page boundaries that are awkward to unit-test outside a
 real App Router runtime.
 
 `/app/*` (`src/app/app/layout.tsx`) is wrapped in `AuthGuard`
-(`components/app/auth-guard.tsx`, AUTH-001) — real session-cookie
-authentication (`SessionProvider`/`useSession`,
+(`components/app/auth-guard.tsx`, AUTH-001, extended TENANT-001) — real
+session-cookie authentication (`SessionProvider`/`useSession`,
 `features/auth/session-context.tsx`), scoped to `/app/*` only via that
 layout (`/auth`/`/book`/`/admin` render no `SessionProvider` and have no
 use for one). This is UX only: the backend independently enforces
 `auth:sanctum` on every protected endpoint regardless of what this
 component renders — never treat client-side routing here as the real
-security boundary. No permission/role/tenant-membership checks exist yet
-— that remains a later task (CLAUDE.md §9-10); `/admin` remains
-deliberately unauthenticated (RISK-018, unchanged by AUTH-001).
+security boundary. `/onboarding` is wrapped the same way by
+`OnboardingGuard` (`components/app/onboarding-guard.tsx`, TENANT-001) —
+the mirror image of `AuthGuard`: authenticated-but-no-tenant is sent to
+`/onboarding`, authenticated-with-a-tenant is sent to `/app`, both share
+the loading/unreachable fallback UI (`session-gate-fallback.tsx`). No
+permission/role checks exist yet — that remains AUTHZ-001's scope
+(CLAUDE.md §9-10); `/admin` remains deliberately unauthenticated
+(RISK-018, unchanged).
 
 ## Component layers
 
@@ -2002,11 +2007,23 @@ src/features/
             requirements, backend remains authoritative", `validation.ts`'s
             `RESET_PASSWORD_MIN_LENGTH`). Both still reuse `isValidEmail`
             (`features/patients/patient-form-validation.ts`) outright.
+            `AuthenticatedUser` (`features/auth/api.ts`) grew `tenant`/
+            `membership` (TENANT-001 §14) — both `null` for an
+            authenticated-but-not-yet-onboarded account, the signal
+            `AuthGuard`/`OnboardingGuard` branch on.
+
+  tenancy/  `provisionTenant` (`features/tenancy/api.ts`, TENANT-001 Gate
+            4) — the one function that POSTs the Onboarding wizard's
+            accumulated draft to `/api/v1/tenants/provision`, built on the
+            same shared `apiFetch` boundary every `features/<module>/api.ts`
+            uses. Returns the same `AuthenticatedUser` shape as
+            `getCurrentUser()`/`login()`.
 
   onboarding/
             Cabinet Onboarding wizard (UI-013X Gate 2), replacing the
-            `/onboarding` Foundation/Demo placeholder. Composes EXISTING
-            Paramètres form-value types outright
+            `/onboarding` Foundation/Demo placeholder; real tenant
+            provisioning since TENANT-001 (RISK-020, resolved). Composes
+            EXISTING Paramètres form-value types outright
             (`CabinetProfileFormValues`/`CabinetService`/
             `CabinetWorkingHoursFormValues`/`AppointmentSettingsFormValues`,
             task §14) — there is no `OnboardingCabinet`/`OnboardingService`/
@@ -2043,17 +2060,25 @@ src/features/
             that step (task §25) — no approved wireframe defines this
             review-before-completion pattern (Spec #9 Screen 07 goes
             straight to completion), so it is this task's own explicit
-            addition, not a spec contradiction (ADR-019). Completion never
-            claims a tenant/database was actually provisioned — the
-            server notice is always shown, and the one "Découvrir mon
-            espace (aperçu)" link to `/app` is explicitly labeled a
-            non-persistent preview (task §26, RISK-020). `app/onboarding/
-            layout.tsx`'s max width grew from `max-w-lg` to `max-w-2xl`
-            and switched from vertically-centered to top-aligned,
-            mirroring UI-012ABCDE's own `book/layout.tsx` widening
-            precedent — the real wizard (services table, weekly hours
-            grid, review sections) needs more room than a single centered
-            form.
+            addition, not a spec contradiction (ADR-019). "Terminer la
+            configuration" (`OnboardingWizard.handleFinish`, TENANT-001)
+            now POSTs the accumulated draft via `provisionTenant` — a real
+            Tenant + owner TenantMembership are created transactionally
+            before the completion screen ever renders; a failure shows an
+            inline `submitError` and keeps the user on Récapitulatif
+            (never a silent failure). Deliberately does NOT call
+            `useSession().refresh()` on success — that would flip
+            `OnboardingGuard`'s "already onboarded" check mid-flow and
+            bounce the user to `/app` before they see the completion
+            screen; `/app`'s own `AuthGuard` discovers the new
+            tenant/membership fresh when the completion link is actually
+            followed, mirroring `LoginPage`'s own established reasoning.
+            `app/onboarding/layout.tsx`'s max width grew from `max-w-lg`
+            to `max-w-2xl` and switched from vertically-centered to
+            top-aligned, mirroring UI-012ABCDE's own `book/layout.tsx`
+            widening precedent — the real wizard (services table, weekly
+            hours grid, review sections) needs more room than a single
+            centered form.
 
 Date-only arithmetic (`addDaysIso` in `features/agenda/format.ts`) must
 stay entirely UTC-based end to end (`Date.UTC()` construction,

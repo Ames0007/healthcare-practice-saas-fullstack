@@ -1,9 +1,9 @@
 # Modules
 
-This directory holds the business modules of the modular monolith. It is
-currently empty: no module has been implemented yet. The first module
-lands with Identity/Tenancy (Phase 1) per
-`docs/specifications/06-master-implementation-plan.md`.
+This directory holds the business modules of the modular monolith.
+`Identity` (AUTH-001) and `Tenancy` (TENANT-001) are implemented — both
+Phase 1 per `docs/specifications/06-master-implementation-plan.md`. Every
+other module below remains unimplemented.
 
 ## Convention
 

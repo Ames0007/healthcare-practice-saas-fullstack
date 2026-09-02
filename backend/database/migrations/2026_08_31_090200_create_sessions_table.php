@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * AUTH-001 session strategy (documented in DECISIONS.md ADR-020):
+ * AUTH-001 session strategy (documented in DECISIONS.md ADR-021):
  * SESSION_DRIVER=database. Column shape follows Laravel's own
  * DatabaseSessionHandler contract exactly (`id`/`payload`/`last_activity`
  * are framework-required column names) — only `user_id` is adapted from the

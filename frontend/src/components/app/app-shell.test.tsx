@@ -15,7 +15,14 @@ vi.mock("next/navigation", () => ({
 const { logoutMock } = vi.hoisted(() => ({ logoutMock: vi.fn().mockResolvedValue(undefined) }));
 
 vi.mock("@/features/auth/api", () => ({
-  getCurrentUser: vi.fn().mockResolvedValue({ id: "user-1", email: "practicien@example.ma", status: "active", lastLoginAt: null }),
+  getCurrentUser: vi.fn().mockResolvedValue({
+    id: "user-1",
+    email: "practicien@example.ma",
+    status: "active",
+    lastLoginAt: null,
+    tenant: { id: "tenant-1", name: "Cabinet Atlas", slug: "cabinet-atlas", status: "active" },
+    membership: { id: "membership-1", profileType: "owner_admin", isOwner: true },
+  }),
   logout: logoutMock,
 }));
 
@@ -44,7 +51,7 @@ afterEach(() => {
 });
 
 describe("AppShell", () => {
-  it("renders the sidebar, topbar and main content region", () => {
+  it("renders the sidebar, topbar and main content region", async () => {
     renderShell();
 
     // Sidebar navigation (desktop/tablet) — all primary modules present.
@@ -52,6 +59,9 @@ describe("AppShell", () => {
     // Patients) also render in the mobile bottom nav, which coexists in
     // the DOM in jsdom (no real CSS breakpoint hiding).
     const sidebar = screen.getByRole("complementary");
+    // TENANT-001 §31: the real tenant name from the session, not the old
+    // `topbar.practiceName` demo string.
+    expect(await within(sidebar).findByText("Cabinet Atlas")).toBeInTheDocument();
     expect(within(sidebar).getByText("Aujourd'hui")).toBeInTheDocument();
     expect(within(sidebar).getByText("Agenda")).toBeInTheDocument();
     expect(within(sidebar).getByText("Patients")).toBeInTheDocument();

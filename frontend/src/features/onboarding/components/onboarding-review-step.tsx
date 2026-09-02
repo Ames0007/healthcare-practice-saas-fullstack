@@ -19,6 +19,10 @@ export interface OnboardingReviewStepProps {
   preferences: AppointmentSettingsFormValues;
   onEditStep: (step: OnboardingStep) => void;
   onFinish: () => void;
+  /** TENANT-001: true while `provisionTenant` is in flight — disables the finish button so a double-click can't fire two provisioning requests. */
+  isSubmitting: boolean;
+  /** TENANT-001: set when `provisionTenant` rejects — a translated, user-facing message, never a raw error/stack. */
+  submitError: string | null;
 }
 
 /**
@@ -28,8 +32,23 @@ export interface OnboardingReviewStepProps {
  * (§25's exact section-by-section shape), not a spec contradiction (see
  * ADR-019). Every value shown here is read directly from the wizard's own
  * accumulated state — never re-entered or recomputed a second way.
+ *
+ * `onFinish` now triggers a real `provisionTenant` call (TENANT-001 Gate 4)
+ * — `isSubmitting`/`submitError` surface that call's real loading/failure
+ * states, the same pattern `LoginPage`/`ForgotPasswordPage` already
+ * established for their own backend calls.
  */
-export function OnboardingReviewStep({ cabinet, hours, services, team, preferences, onEditStep, onFinish }: OnboardingReviewStepProps) {
+export function OnboardingReviewStep({
+  cabinet,
+  hours,
+  services,
+  team,
+  preferences,
+  onEditStep,
+  onFinish,
+  isSubmitting,
+  submitError,
+}: OnboardingReviewStepProps) {
   const { t, locale } = useLocale();
   const sortedServices = sortServicesByName(services);
 
@@ -156,9 +175,15 @@ export function OnboardingReviewStep({ cabinet, hours, services, team, preferenc
         </dl>
       </section>
 
+      {submitError && (
+        <p role="alert" className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
+          {submitError}
+        </p>
+      )}
+
       <div className="flex justify-end border-t border-border pt-4">
-        <Button type="button" onClick={onFinish}>
-          {t("onboarding.review.finishAction")}
+        <Button type="button" onClick={onFinish} disabled={isSubmitting}>
+          {isSubmitting ? t("onboarding.review.submittingAction") : t("onboarding.review.finishAction")}
         </Button>
       </div>
     </Card>

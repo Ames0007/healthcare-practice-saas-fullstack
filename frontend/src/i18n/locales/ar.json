@@ -2672,15 +2672,18 @@
       "preferencesSection": "التفضيلات",
       "editAction": "تعديل",
       "finishAction": "إنهاء الإعداد",
+      "submittingAction": "جارٍ إنشاء العيادة…",
       "noServices": "لم تتم إضافة أي خدمة",
       "noTeam": "لم تتم إضافة أي عضو",
-      "closedDay": "مغلق"
+      "closedDay": "مغلق",
+      "alreadyProvisionedError": "هذا الحساب مرتبط بالفعل بعيادة.",
+      "serverUnavailableError": "الخادم غير متاح حاليًا. حاولوا مرة أخرى.",
+      "genericError": "حدث خطأ. حاولوا مرة أخرى."
     },
     "complete": {
       "heading": "مساحتكم جاهزة",
-      "description": "يمكنكم البدء باكتشاف مساحتكم.",
-      "serverNotice": "معاينة للإعداد فقط — سيتم إنشاء عيادتكم فعليًا عند تفعيل تكامل الخادم. لم يتم حفظ أي شيء.",
-      "exploreAction": "اكتشاف مساحتي (معاينة)"
+      "description": "تم إنشاء عيادتكم بنجاح.",
+      "exploreAction": "اكتشاف مساحتي"
     }
   },
   "areas": {

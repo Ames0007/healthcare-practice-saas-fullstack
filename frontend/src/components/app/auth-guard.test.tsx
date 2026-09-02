@@ -19,6 +19,24 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/app/patients",
 }));
 
+const ONBOARDED_USER = {
+  id: "user-1",
+  email: "docteur@cabinet.test",
+  status: "active",
+  lastLoginAt: null,
+  tenant: { id: "tenant-1", name: "Cabinet Atlas", slug: "cabinet-atlas", status: "active" },
+  membership: { id: "membership-1", profileType: "owner_admin", isOwner: true },
+};
+
+const NOT_YET_ONBOARDED_USER = {
+  id: "user-1",
+  email: "docteur@cabinet.test",
+  status: "active",
+  lastLoginAt: null,
+  tenant: null,
+  membership: null,
+};
+
 function renderGuarded() {
   return render(
     <LocaleProvider initialLocale="fr">
@@ -35,8 +53,8 @@ afterEach(() => {
 });
 
 describe("AuthGuard", () => {
-  it("renders protected content once the backend confirms an authenticated session", async () => {
-    getCurrentUserMock.mockResolvedValue({ id: "user-1", email: "docteur@cabinet.test", status: "active", lastLoginAt: null });
+  it("renders protected content once the backend confirms an authenticated session with an active tenant", async () => {
+    getCurrentUserMock.mockResolvedValue(ONBOARDED_USER);
     renderGuarded();
 
     expect(await screen.findByText("Protected content")).toBeInTheDocument();
@@ -53,6 +71,14 @@ describe("AuthGuard", () => {
     expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
   });
 
+  it("redirects to /onboarding — never rendering protected content — when authenticated but not yet onboarded (TENANT-001)", async () => {
+    getCurrentUserMock.mockResolvedValue(NOT_YET_ONBOARDED_USER);
+    renderGuarded();
+
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/onboarding"));
+    expect(screen.queryByText("Protected content")).not.toBeInTheDocument();
+  });
+
   it("shows a retry screen — never a redirect — when the backend cannot be reached at all", async () => {
     getCurrentUserMock.mockRejectedValue(new ApiUnavailableError());
     renderGuarded();
@@ -63,7 +89,7 @@ describe("AuthGuard", () => {
 
   it("retry re-runs the session check and can recover into the authenticated state", async () => {
     getCurrentUserMock.mockRejectedValueOnce(new ApiUnavailableError());
-    getCurrentUserMock.mockResolvedValueOnce({ id: "user-1", email: "docteur@cabinet.test", status: "active", lastLoginAt: null });
+    getCurrentUserMock.mockResolvedValueOnce(ONBOARDED_USER);
     renderGuarded();
 
     fireEvent.click(await screen.findByRole("button", { name: "Réessayer" }));
@@ -72,7 +98,7 @@ describe("AuthGuard", () => {
   });
 
   it("never touches localStorage anywhere in the bootstrap flow", async () => {
-    getCurrentUserMock.mockResolvedValue({ id: "user-1", email: "docteur@cabinet.test", status: "active", lastLoginAt: null });
+    getCurrentUserMock.mockResolvedValue(ONBOARDED_USER);
     renderGuarded();
 
     await screen.findByText("Protected content");

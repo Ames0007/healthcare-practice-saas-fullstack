@@ -280,7 +280,7 @@ anywhere beyond a controlled prototype-review environment.
 
 **Topic:** `/auth` has no real credential verification — Login/Forgot
 password/Reset password never authenticate anyone
-**Status:** RESOLVED (AUTH-001, 2026-09-01, DECISIONS.md ADR-020)
+**Status:** RESOLVED (AUTH-001, 2026-09-01, DECISIONS.md ADR-021)
 **Affected Tasks:** UI-013X, `06-master-implementation-plan.md` TASK-014
 ("Authentication") / TASK-016 ("Login security")
 **Description:** `LoginPage` validates form shape only (required fields,
@@ -320,7 +320,7 @@ enforcement on top of this real authentication foundation.
 
 **Topic:** Cabinet Onboarding never provisions a real tenant — the wizard
 draft is session-only and is discarded on refresh
-**Status:** OPEN (documented boundary, not a defect — task/UI-013X, ADR-019)
+**Status:** RESOLVED (TENANT-001, 2026-09-02, DECISIONS.md ADR-022)
 **Affected Tasks:** UI-013X, `06-master-implementation-plan.md` TASK-037
 ("Cabinet onboarding flow") and its backend-provisioning counterpart
 **Description:** `OnboardingWizard` accumulates a Cabinet/Horaires/
@@ -334,9 +334,54 @@ labeled as a non-persistent preview, never framed as the real product.
 Refreshing at any point in the wizard loses all in-progress input — this
 is the expected consequence of "no persistence," not a bug to fix within
 this task.
-**Decision Required Before:** A future backend-integration task must wire
-"Terminer la configuration" to real tenant-provisioning API calls
-(Cabinet/Services/WorkingHours/TeamMember/AppointmentSettings creation,
-transactionally) before onboarding can be considered functionally
-complete — the step components and their reused Paramètres validators
-need no rework for that change, only the final submission boundary.
+**Resolution:** TENANT-001 wired "Terminer la configuration" to a real
+`POST /api/v1/tenants/provision` call (`ProvisionTenant`, backend) that
+creates a Tenant + owner `TenantMembership` + `TenantSettings` row
+transactionally. Cabinet fields map onto the real `tenants` columns;
+Préférences maps onto `tenant_settings`' typed appointment-default
+columns; Horaires/Services/Équipe are captured as provisional JSONB
+snapshots on `tenant_settings` pending the Scheduling/Billing/Team
+modules that will own their real tables (tracked as RISK-021, not
+silently dropped). The wizard still loses in-progress (not-yet-submitted)
+input on refresh — unchanged, and still not a defect, just no longer true
+of the final submitted draft. Verified via 26 new backend feature tests
+and updated frontend tests (`onboarding-wizard.test.tsx`,
+`auth-guard.test.tsx`, `onboarding-guard.test.tsx`).
+**Decision Required Before:** N/A — resolved.
+
+---
+
+### RISK-021
+
+**Topic:** Two TENANT-001 migration debts intentionally deferred to future
+modules — `tenants.specialty` as a plain string, and three JSONB
+onboarding-snapshot columns on `tenant_settings`
+**Status:** OPEN (documented boundary, not a defect — TENANT-001, ADR-022)
+**Affected Tasks:** `06-master-implementation-plan.md` TASK-039-041
+(MasterData) and the eventual Scheduling/Availability, Billing (services/
+pricing), and Team (staff) tasks
+**Description:**
+1. `tenants.specialty` is a plain validated string
+   (`Tenancy\Domain\Enums\TenantSpecialty`), not the `specialty_id UUID`
+   FK Spec #4 §5.1 defines, because no MasterData module
+   (`global_master_items`/`specialties`) exists yet to reference.
+2. `tenant_settings.onboarding_working_hours`/`onboarding_services`/
+   `onboarding_team` are raw JSONB snapshots of what
+   `OnboardingWizard`'s Horaires/Services/Équipe steps collected — not
+   real `practitioner_working_hours`/`tenant_services`/employee records,
+   because Agenda, Billing services/pricing, and Team/HR persistence are
+   all explicitly out of TENANT-001's scope.
+
+Neither is silently invented scope-creep or a forgotten TODO — both are
+recorded decisions (ADR-022) with an explicit reason each column exists
+in its current shape.
+**Decision Required Before:** A future MasterData task must migrate
+`tenants.specialty` to a real `specialty_id` FK via expand/migrate/
+contract. A future Scheduling task must migrate
+`onboarding_working_hours` into real availability records; a future
+Billing/services task must migrate `onboarding_services` into real
+`tenant_services` rows; a future Team/HR task must migrate
+`onboarding_team` into real staff records (only for members a user
+chooses to actually invite — this draft never created login credentials,
+per the frontend's own `OnboardingDraftTeamMember` boundary). Each of the
+three JSONB columns can then be dropped.

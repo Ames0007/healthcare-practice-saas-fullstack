@@ -1,8 +1,21 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { LocaleProvider, useLocale } from "@/i18n/locale-provider";
 import type { Locale } from "@/i18n/config";
 import { OnboardingWizard } from "./onboarding-wizard";
+
+const { provisionTenantMock } = vi.hoisted(() => ({ provisionTenantMock: vi.fn() }));
+
+vi.mock("@/features/tenancy/api", () => ({ provisionTenant: provisionTenantMock }));
+
+const PROVISIONED_USER = {
+  id: "user-1",
+  email: "docteur@cabinet.test",
+  status: "active",
+  lastLoginAt: null,
+  tenant: { id: "tenant-1", name: "Cabinet Test", slug: "cabinet-test", status: "active" },
+  membership: { id: "membership-1", profileType: "owner_admin", isOwner: true },
+};
 
 function DirRoot({ children }: { children: React.ReactNode }) {
   const { direction } = useLocale();
@@ -25,9 +38,19 @@ function fillCabinetStep() {
   fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
 }
 
+/** Cabinet -> Horaires -> Services -> Équipe -> Préférences -> Review, accepting every step's default/empty state. */
+function reachReviewStep() {
+  fillCabinetStep();
+  fireEvent.click(screen.getByRole("button", { name: "Continuer" })); // hours
+  fireEvent.click(screen.getByRole("button", { name: "Continuer" })); // services
+  fireEvent.click(screen.getByRole("button", { name: "Continuer" })); // team
+  fireEvent.click(screen.getByRole("button", { name: "Continuer" })); // preferences
+}
+
 afterEach(() => {
   document.documentElement.removeAttribute("dir");
   document.documentElement.removeAttribute("lang");
+  provisionTenantMock.mockReset();
 });
 
 describe("OnboardingWizard", () => {
@@ -147,42 +170,68 @@ describe("OnboardingWizard", () => {
     expect(screen.getByDisplayValue("Cabinet Test")).toBeInTheDocument();
   });
 
-  it("Terminer la configuration reaches the completion screen, which never claims real server persistence", () => {
+  it("Terminer la configuration provisions the tenant for real and reaches the completion screen", async () => {
+    provisionTenantMock.mockResolvedValue(PROVISIONED_USER);
     renderWizard("fr");
-    fillCabinetStep();
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" })); // hours
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" })); // services
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" })); // team
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" })); // preferences
+    reachReviewStep();
     fireEvent.click(screen.getByRole("button", { name: "Terminer la configuration" }));
 
-    expect(screen.getByRole("heading", { name: "Votre espace est prêt" })).toBeInTheDocument();
-    expect(screen.getByText(/votre cabinet sera réellement créé lorsque l'intégration serveur sera active/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Découvrir mon espace (aperçu)" })).toHaveAttribute("href", "/app");
+    expect(await screen.findByRole("heading", { name: "Votre espace est prêt" })).toBeInTheDocument();
+    expect(screen.getByText("Votre cabinet a été créé avec succès.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Découvrir mon espace" })).toHaveAttribute("href", "/app");
+    expect(provisionTenantMock).toHaveBeenCalledTimes(1);
+
+    const payload = provisionTenantMock.mock.calls[0][0];
+    expect(payload.cabinet.name).toBe("Cabinet Test");
+    expect(payload.preferences.defaultDurationMinutes).toBe(30);
   });
 
-  it("never touches localStorage/cookies at any point in the flow", () => {
+  it("disables the finish button and shows a submitting label while provisioning is in flight", async () => {
+    let resolveProvisioning: (value: unknown) => void = () => {};
+    provisionTenantMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveProvisioning = resolve;
+      }),
+    );
     renderWizard("fr");
-    fillCabinetStep();
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    reachReviewStep();
     fireEvent.click(screen.getByRole("button", { name: "Terminer la configuration" }));
 
+    const submittingButton = await screen.findByRole("button", { name: "Création du cabinet…" });
+    expect(submittingButton).toBeDisabled();
+
+    resolveProvisioning(PROVISIONED_USER);
+    expect(await screen.findByRole("heading", { name: "Votre espace est prêt" })).toBeInTheDocument();
+  });
+
+  it("shows an inline error and stays on Review when provisioning fails", async () => {
+    provisionTenantMock.mockRejectedValue(new Error("network exploded"));
+    renderWizard("fr");
+    reachReviewStep();
+    fireEvent.click(screen.getByRole("button", { name: "Terminer la configuration" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Une erreur est survenue. Réessayez.");
+    expect(screen.getByRole("heading", { name: "Récapitulatif" })).toBeInTheDocument();
+  });
+
+  it("never touches localStorage/cookies at any point in the flow, including a successful finish", async () => {
+    provisionTenantMock.mockResolvedValue(PROVISIONED_USER);
+    renderWizard("fr");
+    reachReviewStep();
+    fireEvent.click(screen.getByRole("button", { name: "Terminer la configuration" }));
+
+    await screen.findByRole("heading", { name: "Votre espace est prêt" });
     expect(window.localStorage.length).toBe(0);
     expect(document.cookie).toBe("");
   });
 
-  it("progress is hidden once the flow reaches completion", () => {
+  it("progress is hidden once the flow reaches completion", async () => {
+    provisionTenantMock.mockResolvedValue(PROVISIONED_USER);
     renderWizard("fr");
-    fillCabinetStep();
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
-    fireEvent.click(screen.getByRole("button", { name: "Continuer" }));
+    reachReviewStep();
     fireEvent.click(screen.getByRole("button", { name: "Terminer la configuration" }));
 
+    await screen.findByRole("heading", { name: "Votre espace est prêt" });
     expect(screen.queryByText(/Étape \d sur 6/)).not.toBeInTheDocument();
   });
 

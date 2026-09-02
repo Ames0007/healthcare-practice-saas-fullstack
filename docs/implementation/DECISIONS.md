@@ -1949,7 +1949,7 @@ set, selecting a 20-minute service left the `<select>` showing 15).
 
 ------------------------------------------------------------------------
 
-## ADR-020 — AUTH-001 Real Authentication: Sanctum SPA session cookies, database session driver, and a bounded per-module error/request-id contract
+## ADR-021 — AUTH-001 Real Authentication: Sanctum SPA session cookies, database session driver, and a bounded per-module error/request-id contract
 
 ### Status
 
@@ -2129,3 +2129,248 @@ architectural questions Phase 0 deliberately left open:
 ### Date
 
 2026-09-01
+
+---
+
+## ADR-022 — TENANT-001 Multi-Tenant Foundation: `tenant_memberships` over role columns, JSONB onboarding snapshots over premature business tables, and a fail-closed reusable scoping trait
+
+### Status
+
+Accepted
+
+### Context
+
+TENANT-001 is the first task allowed to establish the real multi-tenant
+boundary on top of AUTH-001's authentication foundation — CLAUDE.md §6-7's
+"never trust a client-supplied `tenant_id`" and Spec #5 §14's `TenantContext`
+resolution pipeline, both previously unimplemented (`users` deliberately
+carries no `tenant_id`, AUTH-001 ADR-021). It required resolving:
+
+1. How much of `tenant_memberships` (Spec #4 §4.2: `profile_type`,
+   `is_owner`) to build now versus deferring to AUTHZ-001, given the task's
+   own explicit instruction not to "prematurely duplicate the frontend
+   role/permission architecture into ad-hoc columns."
+2. What to do with `tenants.specialty_id` (Spec #4 §5.1: a `specialty_id
+   UUID NULL` FK) when no MasterData module (`global_master_items`) exists
+   yet to reference.
+3. Whether/how to persist `OnboardingWizard`'s Horaires/Services/Équipe
+   steps, none of which map to a module this task is allowed to build
+   (Agenda/Finance/HR persistence are explicitly out of scope), without
+   silently discarding real user input (checklist §27).
+4. How a reusable tenant-scoping mechanism (checklist Gate 3 §17,
+   "must be implemented centrally, not manually remembered in every
+   controller") can be built and genuinely tested before any tenant-owned
+   business table exists to prove it against.
+5. A frontend sequencing hazard discovered while wiring `OnboardingWizard`
+   to the new endpoint: refreshing `SessionProvider` immediately after a
+   successful provisioning call, from inside the wizard the guard itself
+   renders, creates a same-render race with `OnboardingGuard`'s own
+   "already onboarded -> redirect to `/app`" check.
+
+### Decision
+
+**Backend — `Tenancy` module** (`app/Modules/Tenancy/`), mirroring
+Identity's established layering:
+
+- **`tenants`**: `id`, `name`, `slug` (unique, `/book/{slug}`-ready per
+  Spec #4 §66), `specialty` (plain string, see below), `phone`, `email`,
+  `address`, `city`, `preferred_language`, `currency_code` (`MAD`),
+  `timezone` (`Africa/Casablanca` default), `status`
+  (`active`/`suspended`/`closed`, `Domain\Enums\TenantStatus`). No
+  `logo_file_id` — no object storage exists yet, mirroring the frontend's
+  own `CabinetProfile` doc comment.
+- **`tenant_memberships`**: exactly the spec's own fields — `tenant_id`,
+  `user_id`, `profile_type` (`owner_admin`/`practitioner`/`staff`),
+  `status` (`invited`/`active`/`disabled`), `is_owner`, `joined_at`.
+  `UNIQUE(tenant_id, user_id)`. **No `membership_permissions` table** —
+  that is AUTHZ-001's own spec entity (Spec #4 §4.3) and this task's own
+  explicit boundary; `profile_type`/`is_owner` is the "smallest
+  future-compatible representation" the task asked for, not a placeholder
+  permission system.
+- **`tenants.specialty` is a plain string column validated against a
+  closed `Domain\Enums\TenantSpecialty` (CLAUDE.md's own "Primary initial
+  specialties" list, matching the frontend's `CabinetSpecialty` exactly)
+  — not a `specialty_id` FK.** MasterData (TASK-039-041) does not exist;
+  inventing a one-row `specialties` table now to satisfy the spec's exact
+  column shape would be exactly the "expand scope for convenience"
+  CLAUDE.md §3 forbids. A future MasterData task migrates this column to
+  a real FK via expand/migrate/contract (`backend/database/README.md`'s
+  own documented pattern) — tracked as RISK-021.
+- **`tenant_settings`**: typed columns for the one setting that is a real,
+  current business rule (`appointment_default_scheduling_mode`/
+  `appointment_default_duration_minutes`, Spec #4 §5.2's own "prefer typed
+  columns... for critical business rules"), plus three JSONB columns
+  (`onboarding_working_hours`, `onboarding_services`, `onboarding_team`)
+  that are deliberately raw, unstructured snapshots of onboarding input
+  belonging to modules this task cannot build (Scheduling/Availability
+  owns real working hours, Billing owns real `tenant_services`, Team owns
+  real staff records). They exist only so a user's onboarding input is
+  never silently discarded — tracked as RISK-021 for the future
+  Scheduling/Billing/Team tasks that migrate this JSON into real tables
+  and drop these columns. This is explicitly the allowed JSONB use case
+  per `backend/database/README.md` ("safe snapshots... never a substitute
+  for relational modeling of core entities") — it is not core entity data,
+  it is a bridge.
+- **Delete behavior is `restrictOnDelete()`, never cascade**, for both FKs
+  on `tenant_memberships` (CLAUDE.md §10 / `backend/database/README.md`'s
+  own "do not casually cascade-delete healthcare tenant relationships").
+  `tenant_settings -> tenants` cascades, since it is the tenant's own
+  configuration data, not a relationship to preserve.
+- **`ProvisionTenant`** (Application) creates Tenant + owner
+  TenantMembership + TenantSettings inside one `DB::transaction()`
+  (checklist §24/§28, "prevent partial provisioning") and rejects
+  (`TenantAlreadyProvisionedException` -> 409 `TENANT_ALREADY_PROVISIONED`)
+  any authenticated user who already holds ANY membership, any status, any
+  tenant. V1 has no tenant-switching (checklist §8 — the spec never
+  requires it), so this is a hard stop, not a silent second membership;
+  the schema itself still allows multiple rows per user for a future task.
+- **`TenantSlugGenerator`** (Domain) is a pure function taking a
+  caller-supplied uniqueness check — slugify, then append `-2`, `-3`, ...
+  on collision, then a random suffix as a practically-unreachable
+  fallback. No sequence/locking machinery: unlike invoice/receipt
+  numbering (CLAUDE.md §45), a slug collision has no financial
+  consequence, and the `UNIQUE(slug)` constraint is the real backstop
+  regardless.
+- **`TenantContext`** (Domain value object: `tenantId`, `tenantName`,
+  `tenantSlug`, `tenantStatus`, `membershipId`, `profileType`, `isOwner`)
+  deliberately omits Spec #5 §14's `subscription_status`/`permissions` —
+  Subscriptions and AUTHZ-001 are both separate, unimplemented modules;
+  guessing their shape now would be exactly the kind of invented
+  requirement CLAUDE.md §3 forbids. `ResolveCurrentTenantContext`
+  (Application) resolves it from the authenticated user's first ACTIVE
+  membership (ordered `joined_at`, `created_at`) — `invited`/`disabled`
+  memberships resolve to `null`, identical to having none (checklist §15).
+  Both `LoginController` and `CurrentUserController` (Identity) now inject
+  this Tenancy Application service and pass it into `UserResource` — an
+  explicit cross-module Application-layer dependency, exactly the pattern
+  CLAUDE.md §4 asks for, never Identity reaching into Tenancy's
+  persistence directly.
+- **Reusable tenant-scoping**: `CurrentTenantContextHolder` (Application,
+  container singleton, one per request) + `EnsureTenantContext`
+  (Presentation middleware, alias `tenant.context`) populate it after
+  `auth:sanctum`; `Infrastructure\Persistence\Concerns\BelongsToTenant`
+  (a trait future tenant-owned models attach via `use BelongsToTenant;`)
+  reads it to add a global `tenant_id` scope plus auto-stamp new rows.
+  **It fails CLOSED**: querying/creating a `BelongsToTenant` model with no
+  resolved context throws, rather than silently scoping to nothing (which
+  would return every tenant's rows). No production model uses it yet —
+  this task builds no tenant-owned business table — so it is proven
+  directly against a disposable test-only table
+  (`Tests\Feature\Tenancy\TenantIsolationTest`, mirroring
+  `DatabaseFoundationTest`'s established `Schema::create`-in-`setUp`
+  pattern), including the adversarial cross-tenant read/update/find-by-id
+  cases the checklist's Gate 3 asks for. `CurrentTenantContextHolder` is
+  forgotten in `AppServiceProvider`'s existing `terminating()` callback,
+  same reasoning as the two AUTH-001 singleton-staleness forgets it now
+  sits beside (ADR-021 §7).
+- **`/api/v1/tenants/provision`** sits behind `auth:sanctum` only, NOT
+  `tenant.context` — a user with no tenant yet is exactly who is allowed
+  to call it; `tenant.context` is reserved for future tenant-owned
+  business routes that require an EXISTING tenant.
+- **PostgreSQL RLS remains unimplemented** — no new information changes
+  the standing decision (`backend/database/README.md`, RISK-007); this
+  task's isolation is the application-layer `TenantContext` +
+  `BelongsToTenant` + real FK/unique constraints, matching Spec #4 §75
+  open-decision #19's own "V1 baseline."
+
+**Frontend**:
+
+- `AuthenticatedUser` (`features/auth/api.ts`) grows `tenant`/`membership`
+  (both nullable) — the same shape `/me` and `login` now both return
+  (LoginController resolves TenantContext too, so the session is correct
+  immediately after login without a forced extra round trip).
+- `AuthGuard` (`/app`) now redirects an authenticated-but-untenanted user
+  to `/onboarding`; a new sibling `OnboardingGuard` (`/onboarding`)
+  redirects an already-onboarded user to `/app` and otherwise requires
+  only authentication — the mirror image of each other, sharing extracted
+  `SessionGateLoadingSkeleton`/`SessionGateUnreachableState` fallback
+  components (`session-gate-fallback.tsx`) rather than duplicating that
+  markup a second time.
+- `OnboardingWizard.handleFinish` calls `provisionTenant`
+  (`features/tenancy/api.ts`) and, on success, moves straight to the
+  completion step **without** calling `useSession().refresh()`.
+  Refreshing here would update the very `SessionProvider` state
+  `OnboardingGuard` (rendered as this component's own ancestor) reads on
+  every re-render, flipping its "already onboarded" check to true and
+  redirecting to `/app` before the user ever sees the completion screen —
+  a same-render race discovered while wiring this up, not merely a
+  theoretical concern. `/app`'s own `AuthGuard` discovers the new
+  tenant/membership fresh (a real `/me` call) once the completion
+  screen's link is actually followed, exactly mirroring `LoginPage`'s own
+  already-established "don't bootstrap the session mid-flow" reasoning.
+  `OnboardingReviewStep` gained real `isSubmitting`/`submitError` states
+  (disabled button + inline `role="alert"` message on failure), the same
+  pattern `LoginPage`/`ForgotPasswordPage` already established for their
+  own backend calls.
+- Onboarding's `hours`/`services`/`team` steps are sent to the backend
+  verbatim (their existing `CabinetWorkingHoursFormValues`/`CabinetService`/
+  `OnboardingDraftTeamMember` shapes) — no new frontend types invented to
+  match the backend's JSONB snapshot columns, since those columns are
+  themselves intentionally shapeless pending a real owning module.
+- `app-sidebar.tsx`'s header now shows the real `user.tenant.name`
+  (checklist §31) instead of the `topbar.practiceName` demo string — that
+  key is intentionally left in place and untouched, since
+  `communication-dashboard.tsx`'s own still-fully-mock preview also reads
+  it, and Communication persistence remains out of this task's scope.
+
+### Alternatives considered
+
+1. Put `profile_type`/`is_owner`/permission columns all on
+   `tenant_memberships` now, anticipating AUTHZ-001 — rejected: the task's
+   own §8 explicitly warns against this, and the spec already separates
+   `membership_permissions` as its own entity; adding permission columns
+   now would need un-doing (or living alongside a redundant new table)
+   once AUTHZ-001 lands.
+2. Build a minimal one-row-per-cabinet `specialties` table now to satisfy
+   `specialty_id` literally — rejected: a real MasterData module is
+   `global_master_items` + `tenant_master_items` + categories (Spec #4
+   §26), not one throwaway table; a fake version would need replacing,
+   not extending, once TASK-039-041 lands.
+3. Silently drop Horaires/Services/Équipe on the floor at provisioning
+   time (only persist Cabinet + Préférences) — rejected: checklist §27
+   explicitly asks to persist them "where appropriate," and a user who
+   filled in three screens of real data seeing it vanish on submit is a
+   worse outcome than a temporary JSONB snapshot future tasks migrate.
+4. Model Horaires as real `practitioner_working_hours` rows now — rejected
+   outright: "Agenda persistence" is explicitly listed as forbidden in
+   this task's own instructions, and Spec #4 §12.1 already models working
+   hours as per-practitioner, not cabinet-wide, an unresolved gap the
+   frontend's own `CabinetWorkingHoursDay` doc comment already flags —
+   not this task's decision to resolve.
+5. Add PostgreSQL RLS alongside the application-layer scoping, since a
+   tenant boundary was finally being built — rejected: RLS is Spec #4 §75
+   open decision #19 and RISK-007, both requiring "careful, separately
+   tested design" per `backend/database/README.md`; bundling it into this
+   task would conflate two decisions that deserve independent review.
+6. Call `useSession().refresh()` right after `provisionTenant` succeeds,
+   before showing the completion screen — the natural-looking first
+   implementation, rejected once it visibly caused `OnboardingGuard` to
+   redirect away from the completion screen before the user could read
+   it; removed in favor of letting `/app`'s own guard refresh on arrival.
+
+### Consequences
+
+- Every future tenant-owned business module (Patients, Scheduling,
+  Billing, ...) has a working, tested scoping pattern (`BelongsToTenant`
+  + `tenant.context` middleware) to attach to on day one, rather than
+  inventing tenant-scoping conventions ad hoc per module.
+- AUTHZ-001 inherits `tenant_memberships.profile_type`/`is_owner` as a
+  given and adds `membership_permissions` + the authorization
+  pipeline/policies on top — no rework of this task's schema expected.
+- A future MasterData task (TASK-039-041) must migrate
+  `tenants.specialty` from a string to a `specialty_id` FK — tracked as
+  RISK-021, not silently forgotten.
+- A future Scheduling/Billing/Team task must migrate
+  `tenant_settings.onboarding_working_hours`/`onboarding_services`/
+  `onboarding_team` into its own real tables and drop these columns —
+  also tracked as RISK-021.
+- `docs/implementation/RISKS_AND_BLOCKERS.md` RISK-020 is resolved by
+  this task. Practitioner governance, permission enforcement, and
+  Subscriptions remain entirely out of scope — `TenantContext` has no
+  `permissions`/`subscription_status` yet, by design (see Decision
+  above), and `/admin` remains deliberately unauthenticated (RISK-018,
+  unchanged).
+
+### Date
+
+2026-09-02

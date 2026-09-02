@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { LocaleProvider } from "@/i18n/locale-provider";
+import { SessionProvider } from "@/features/auth/session-context";
 import { AppSidebar } from "./app-sidebar";
 
 const mockUsePathname = vi.fn<() => string>();
@@ -9,10 +10,27 @@ vi.mock("next/navigation", () => ({
   usePathname: () => mockUsePathname(),
 }));
 
+// AppSidebar reads `useSession()` (TENANT-001, for the real tenant-name
+// header) — mocked here so these route-highlighting tests never hit a real
+// fetch, mirroring app-shell.test.tsx's own established pattern.
+vi.mock("@/features/auth/api", () => ({
+  getCurrentUser: vi.fn().mockResolvedValue({
+    id: "user-1",
+    email: "practicien@example.ma",
+    status: "active",
+    lastLoginAt: null,
+    tenant: { id: "tenant-1", name: "Cabinet Atlas", slug: "cabinet-atlas", status: "active" },
+    membership: { id: "membership-1", profileType: "owner_admin", isOwner: true },
+  }),
+  logout: vi.fn(),
+}));
+
 function renderSidebar() {
   return render(
     <LocaleProvider initialLocale="fr">
-      <AppSidebar />
+      <SessionProvider>
+        <AppSidebar />
+      </SessionProvider>
     </LocaleProvider>,
   );
 }

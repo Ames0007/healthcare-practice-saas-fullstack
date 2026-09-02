@@ -2993,7 +2993,7 @@ All notable changes to this project are documented in this file.
   (RISK-019, now resolved) with a real Laravel `app/Modules/Identity/`
   backend and a real frontend API boundary. See
   `docs/implementation/IMPLEMENTATION_STATUS.md`'s new "Full-Stack
-  Integration Sequence" section and `DECISIONS.md` ADR-020 for full
+  Integration Sequence" section and `DECISIONS.md` ADR-021 for full
   detail. Summary: Laravel Sanctum stateful-SPA session-cookie
   authentication (not JWT), `SESSION_DRIVER=database`; real
   login/logout/me/forgot-password/reset-password endpoints backed by
@@ -3015,3 +3015,35 @@ All notable changes to this project are documented in this file.
   clean, plus a real Playwright-driven browser verification against the
   live dev backend+frontend+PostgreSQL covering the full login/logout/
   guard-redirect/forgot-password/emailed-link/reset/re-login loop.
+- TENANT-001 — Real multi-tenant foundation + cabinet provisioning: the
+  second full-stack integration task, establishing the tenant boundary
+  AUTH-001 deliberately left open and resolving RISK-020 (Cabinet
+  Onboarding never provisioned a real tenant). See
+  `docs/implementation/IMPLEMENTATION_STATUS.md`'s "Full-Stack
+  Integration Sequence" section and `DECISIONS.md` ADR-022 for full
+  detail. Summary: new `app/Modules/Tenancy/` backend module —
+  `tenants`/`tenant_memberships`/`tenant_settings`, real FK/unique
+  constraints (`restrictOnDelete()`, never cascade, on the membership
+  relationships), `ProvisionTenant` creating a Tenant + owner
+  `TenantMembership` + `TenantSettings` transactionally behind
+  `POST /api/v1/tenants/provision`, and a reusable, fail-closed
+  tenant-scoping mechanism (`CurrentTenantContextHolder` +
+  `EnsureTenantContext`/`tenant.context` middleware +
+  `BelongsToTenant` trait) ready for the first tenant-owned business
+  module even though none exists yet — proven against a disposable
+  test-only table. `/auth/me` and `/auth/login` both now project the
+  authenticated user's current tenant/membership (`null` for a
+  not-yet-onboarded account, never an error). Frontend: `AuthGuard`
+  now redirects an untenanted user to `/onboarding`; a new sibling
+  `OnboardingGuard` redirects an already-onboarded user back to `/app`;
+  `OnboardingWizard`'s "Terminer la configuration" now really
+  provisions the tenant (real loading/error states) instead of a
+  no-op preview transition. `tenants.specialty` (string, not the
+  spec's `specialty_id` FK) and three provisional JSONB
+  onboarding-snapshot columns on `tenant_settings` are both deliberate,
+  documented deferrals to future MasterData/Scheduling/Billing/Team
+  tasks (RISK-021), not scope creep or forgotten TODOs. Patient/Agenda/
+  Clinical/Finance/HR/Stock/Communication persistence, AUTHZ-001's
+  permission engine, and Subscriptions all remain explicitly out of
+  scope. 68/68 backend tests (26 new, real PostgreSQL), frontend
+  regression clean, typecheck/lint/build clean.

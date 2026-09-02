@@ -2,26 +2,23 @@
 
 import { useEffect, type ReactNode } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { useLocale } from "@/i18n/locale-provider";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
 import { SessionProvider, useSession } from "@/features/auth/session-context";
+import { SessionGateLoadingSkeleton, SessionGateUnreachableState } from "./session-gate-fallback";
 
 /**
- * Protects `/app/*` (AUTH-001 §28-29, §32). This is UX only — the backend
- * independently enforces authentication on every API call regardless of
- * what this component renders (CLAUDE.md's own "frontend routing is not
+ * Protects `/app/*` (AUTH-001 §28-29, §32; TENANT-001 §32). This is UX
+ * only — the backend independently enforces authentication (and, once a
+ * tenant-owned route exists, tenant context) on every API call regardless
+ * of what this component renders (CLAUDE.md's own "frontend routing is not
  * security" principle, task's explicit instruction not to claim otherwise).
  *
- * Three non-authenticated states, each distinct (task §33: differentiate
- * validation/invalid-credentials/rate-limited/server-unavailable — applied
- * here to session bootstrap): `loading` (skeleton, no flash of the login
- * redirect), `unauthenticated` (redirect to `/auth`, preserving the
- * attempted path as `?from=` so a future task can return the user to where
- * they were headed), `unreachable` (the backend itself could not be
- * reached — shown as a retry screen, never silently treated as "logged
- * out", which would misrepresent a network problem as an auth failure).
+ * Four non-content states, each distinct: `loading` (skeleton, no flash of
+ * the login redirect), `unauthenticated` (redirect to `/auth`, preserving
+ * the attempted path as `?from=`), `unreachable` (the backend itself could
+ * not be reached — a retry screen, never silently treated as "logged
+ * out"), and — new in TENANT-001 — authenticated but with no active
+ * `TenantMembership` yet (redirect to `/onboarding`; the mirror image of
+ * `OnboardingGuard` redirecting an already-onboarded user back to `/app`).
  */
 export function AuthGuard({ children }: { children: ReactNode }) {
   return (
@@ -32,38 +29,30 @@ export function AuthGuard({ children }: { children: ReactNode }) {
 }
 
 function AuthGuardInner({ children }: { children: ReactNode }) {
-  const { status, refresh } = useSession();
-  const { t } = useLocale();
+  const { status, user, refresh } = useSession();
   const router = useRouter();
   const pathname = usePathname();
 
+  const needsOnboarding = status === "authenticated" && !user?.tenant;
+
   useEffect(() => {
-    if (status !== "unauthenticated") return;
+    if (status === "unauthenticated") {
+      const from = pathname ? `?from=${encodeURIComponent(pathname)}` : "";
+      router.replace(`/auth${from}`);
+      return;
+    }
 
-    const from = pathname ? `?from=${encodeURIComponent(pathname)}` : "";
-    router.replace(`/auth${from}`);
-  }, [status, pathname, router]);
+    if (needsOnboarding) {
+      router.replace("/onboarding");
+    }
+  }, [status, needsOnboarding, pathname, router]);
 
-  if (status === "loading" || status === "unauthenticated") {
-    return (
-      <div className="flex h-dvh flex-col gap-4 p-6">
-        <Skeleton className="h-10 w-48" />
-        <Skeleton className="h-32 w-full" />
-        <Skeleton className="h-32 w-full" />
-      </div>
-    );
+  if (status === "loading" || status === "unauthenticated" || needsOnboarding) {
+    return <SessionGateLoadingSkeleton />;
   }
 
   if (status === "unreachable") {
-    return (
-      <div className="flex h-dvh items-center justify-center p-6">
-        <EmptyState
-          title={t("auth.session.unreachableTitle")}
-          description={t("auth.session.unreachableDescription")}
-          primaryAction={<Button onClick={() => void refresh()}>{t("auth.session.retryAction")}</Button>}
-        />
-      </div>
-    );
+    return <SessionGateUnreachableState onRetry={() => void refresh()} />;
   }
 
   return <>{children}</>;

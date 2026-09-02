@@ -1,7 +1,7 @@
 /**
  * Shared low-level HTTP boundary for the real Laravel backend (AUTH-001
  * §23-25). First-party session-cookie authentication (Laravel Sanctum SPA
- * mode, DECISIONS.md ADR-020) — every request carries `credentials:
+ * mode, DECISIONS.md ADR-021) — every request carries `credentials:
  * "include"` so the browser sends/receives the session and XSRF-TOKEN
  * cookies; no token is ever read, stored, or forwarded from application
  * code (CLAUDE.md §10/§25: no LocalStorage auth, no fake JWT).

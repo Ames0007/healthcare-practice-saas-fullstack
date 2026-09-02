@@ -7,13 +7,13 @@ import { Card } from "@/components/ui/card";
 import { buttonClassNames } from "@/components/ui/button";
 
 /**
- * Completion (task §26, Spec #9 Screen 07). No tenant/database was
- * actually provisioned — there is no backend yet (task's own explicit
- * boundary) — so this screen never claims otherwise; `serverNotice` is
- * always shown, not a dismissible aside. The one action link is an
- * explicitly-labeled non-persistent preview transition to `/app` (task
- * §26's own conditional allowance) — never framed as "your cabinet is
- * live."
+ * Completion (task §26, Spec #9 Screen 07). This screen is only ever
+ * reached after `OnboardingWizard`'s `handleFinish` has already succeeded
+ * (TENANT-001) — the tenant and owner `TenantMembership` are real,
+ * committed rows by the time this renders, not a preview. The one action
+ * link navigates to `/app`, where `AuthGuard` discovers the new
+ * tenant/membership via a fresh `/me` call (see `OnboardingWizard`'s own
+ * doc comment for why that refresh happens there, not here).
  */
 export function OnboardingCompleteStep() {
   const { t } = useLocale();
@@ -25,9 +25,6 @@ export function OnboardingCompleteStep() {
       </span>
       <h1 className="text-xl font-semibold text-text">{t("onboarding.complete.heading")}</h1>
       <p className="text-sm text-text-secondary">{t("onboarding.complete.description")}</p>
-      <p role="status" className="rounded-md border border-border bg-surface-subtle p-3 text-sm text-text-secondary">
-        {t("onboarding.complete.serverNotice")}
-      </p>
       <Link href="/app" className={buttonClassNames("primary", "md")}>
         {t("onboarding.complete.exploreAction")}
       </Link>

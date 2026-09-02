@@ -2672,15 +2672,18 @@
       "preferencesSection": "Préférences",
       "editAction": "Modifier",
       "finishAction": "Terminer la configuration",
+      "submittingAction": "Création du cabinet…",
       "noServices": "Aucun service ajouté",
       "noTeam": "Aucun membre ajouté",
-      "closedDay": "Fermé"
+      "closedDay": "Fermé",
+      "alreadyProvisionedError": "Ce compte est déjà lié à un cabinet.",
+      "serverUnavailableError": "Le serveur est momentanément indisponible. Réessayez.",
+      "genericError": "Une erreur est survenue. Réessayez."
     },
     "complete": {
       "heading": "Votre espace est prêt",
-      "description": "Vous pouvez commencer à découvrir votre espace.",
-      "serverNotice": "Aperçu de configuration uniquement — votre cabinet sera réellement créé lorsque l'intégration serveur sera active. Rien n'a été enregistré.",
-      "exploreAction": "Découvrir mon espace (aperçu)"
+      "description": "Votre cabinet a été créé avec succès.",
+      "exploreAction": "Découvrir mon espace"
     }
   },
   "areas": {

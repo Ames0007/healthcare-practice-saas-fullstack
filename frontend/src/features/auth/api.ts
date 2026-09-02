@@ -5,11 +5,33 @@ import { apiFetch } from "@/lib/api-client";
  * Built on the shared `apiFetch` (`@/lib/api-client`) — no `fetch(...)` call
  * anywhere else in `features/auth`.
  */
+export interface CurrentTenant {
+  id: string;
+  name: string;
+  slug: string;
+  status: string;
+}
+
+export interface CurrentMembership {
+  id: string;
+  profileType: string;
+  isOwner: boolean;
+}
+
+/**
+ * `tenant`/`membership` (TENANT-001 §14) are both `null` for an
+ * authenticated user with no active `TenantMembership` yet — an ordinary,
+ * expected state (a just-registered owner who hasn't finished onboarding),
+ * never an error. `AuthGuard`/`OnboardingGuard`
+ * (`components/app/auth-guard.tsx`/`onboarding-guard.tsx`) branch on this.
+ */
 export interface AuthenticatedUser {
   id: string;
   email: string;
   status: string;
   lastLoginAt: string | null;
+  tenant: CurrentTenant | null;
+  membership: CurrentMembership | null;
 }
 
 export function login(email: string, password: string, rememberMe: boolean): Promise<AuthenticatedUser> {

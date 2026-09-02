@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AssignRequestId;
+use App\Modules\Tenancy\Presentation\Middleware\EnsureTenantContext;
 use App\Support\Http\ApiErrorResponse;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
@@ -20,12 +21,20 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // AUTH-001: session-cookie authentication for the Next.js SPA
-        // (DECISIONS.md ADR-020) — prepends Sanctum's stateful-frontend
+        // (DECISIONS.md ADR-021) — prepends Sanctum's stateful-frontend
         // middleware (session + CSRF) to the api group for requests whose
         // Origin/Referer matches config/sanctum.php's `stateful` list.
         $middleware->statefulApi();
 
         $middleware->append(AssignRequestId::class);
+
+        // TENANT-001: registered for future tenant-owned business routes
+        // (Patients, Scheduling, ...) to attach alongside auth:sanctum —
+        // no route uses it yet (see Tenancy\Presentation\Middleware\
+        // EnsureTenantContext's own doc comment).
+        $middleware->alias([
+            'tenant.context' => EnsureTenantContext::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

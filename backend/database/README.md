@@ -5,8 +5,9 @@ PostgreSQL application foundation established by TASK-005. Companion to
 (the authoritative source — this file documents *conventions*, not the
 entity catalog; do not duplicate it here).
 
-**No business-domain schema exists yet.** `database/migrations/` is
-deliberately empty — see `database/migrations/README.md`.
+Identity (AUTH-001) and Tenancy (TENANT-001) are the only business
+modules with real schema so far — see `database/migrations/README.md`
+for the exact table list. Every other module remains unimplemented.
 
 ## PostgreSQL
 
@@ -96,9 +97,12 @@ $table->index(['tenant_id', 'patient_id']);
 $table->index(['tenant_id', 'status']);
 ```
 
-No placeholder tables are created now to demonstrate this — the pattern
-applies when the first tenant-owned migration lands (Identity/Tenancy,
-Phase 1).
+`tenant_memberships`/`tenant_settings` (TENANT-001) already follow this —
+`tenants` itself does not carry `tenant_id` (it IS the tenant). The first
+true *business*-module tenant-owned table (Patients, most likely) is
+still pending — see `Tenancy\Infrastructure\Persistence\Concerns\
+BelongsToTenant` (backend/ARCHITECTURE.md's "Tenant-context principle")
+for the reusable scoping trait it should attach to.
 
 ## Tenant-aware referential integrity
 

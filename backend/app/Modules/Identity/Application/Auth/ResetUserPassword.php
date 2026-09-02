@@ -49,7 +49,7 @@ final class ResetUserPassword
      * sessions"): a password reset invalidates every existing session for
      * the account, on every device — the credential that made those
      * sessions trustworthy just changed. SESSION_DRIVER=database
-     * (DECISIONS.md ADR-020) makes this a direct row purge; no session
+     * (DECISIONS.md ADR-021) makes this a direct row purge; no session
      * exists for this request itself (the user is not authenticated during
      * password reset), so there is nothing to preserve.
      */

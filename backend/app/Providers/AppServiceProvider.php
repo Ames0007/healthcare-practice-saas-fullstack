@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Modules\Tenancy\Application\Context\CurrentTenantContextHolder;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Auth\SessionGuard;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -20,6 +21,11 @@ class AppServiceProvider extends ServiceProvider
         // SessionGuard (not the StatefulGuard interface) because it relies
         // on attemptWhen(), which is not part of that interface.
         $this->app->bind(SessionGuard::class, fn ($app) => $app['auth']->guard('web'));
+
+        // TENANT-001: one holder per request — populated by
+        // EnsureTenantContext, read by Tenancy\Infrastructure\Persistence\
+        // Concerns\BelongsToTenant.
+        $this->app->singleton(CurrentTenantContextHolder::class);
     }
 
     /**
@@ -69,6 +75,13 @@ class AppServiceProvider extends ServiceProvider
             // in-memory session data instead of the current request's.
             $this->app->forgetInstance('auth.driver');
             $this->app->forgetInstance('session.store');
+
+            // TENANT-001: CurrentTenantContextHolder is a singleton for the
+            // same "one per request" reason as the two bindings above —
+            // without forgetting it here, a TenantContext set by one
+            // simulated request would still be readable by a later,
+            // unrelated one in the same test method.
+            $this->app->forgetInstance(CurrentTenantContextHolder::class);
         });
     }
 
